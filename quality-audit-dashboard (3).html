@@ -1,0 +1,2061 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Frido · Sales Quality Audit Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<style>
+/* ============================================================
+   DESIGN TOKENS
+   Palette: petrol-teal primary (native to Frido reporting),
+   cool-grey base (analytics, not the AI cream default),
+   mono figures for analyst credibility.
+   ============================================================ */
+:root{
+  --ink:#0B2E36;
+  --ink-soft:#33555E;
+  --muted:#5E767E;
+  --faint:#8DA1A8;
+  --line:#E1E8EA;
+  --line-soft:#EDF1F2;
+  --bg:#EDF1F3;
+  --surface:#FFFFFF;
+  --surface-2:#F7FAFB;
+
+  --primary:#0E6B7D;
+  --primary-deep:#0A4E5C;
+  --primary-dark:#083B46;
+  --primary-tint:#E7F1F3;
+  --primary-tint-2:#D5E7EA;
+
+  --accent:#E8971A;      /* amber — cumulative line, highlights */
+  --accent-soft:#FBEFD6;
+
+  --good:#17916A;   --good-bg:#E4F3EC;   --good-line:#B8E0CD;
+  --avg:#C88A08;    --avg-bg:#FBF1D8;    --avg-line:#F0DDA8;
+  --poor:#C6413B;   --poor-bg:#FBE7E5;   --poor-line:#F3C6C2;
+
+  /* five-band distribution scale */
+  --b1:#C0392B; --b2:#E67E22; --b3:#E0A106; --b4:#7FB800; --b5:#17916A;
+
+  --radius:16px;
+  --radius-sm:11px;
+  --radius-lg:22px;
+  --shadow-sm:0 1px 2px rgba(11,46,54,.05), 0 1px 3px rgba(11,46,54,.05);
+  --shadow:0 2px 8px rgba(11,46,54,.06), 0 8px 24px rgba(11,46,54,.06);
+  --shadow-lg:0 12px 40px rgba(11,46,54,.12);
+  --focus:0 0 0 3px rgba(14,107,125,.35);
+
+  --sans:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  --display:'Space Grotesk','Inter',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+
+  --header-h:66px;
+  --filter-h:60px;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:var(--sans);
+  color:var(--ink);
+  background:
+    radial-gradient(1200px 500px at 85% -10%, rgba(14,107,125,.06), transparent 60%),
+    var(--bg);
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+  font-size:14px;
+  line-height:1.5;
+}
+h1,h2,h3,h4{margin:0;font-family:var(--display);font-weight:600;letter-spacing:-.01em;color:var(--ink)}
+a{color:inherit}
+button{font-family:inherit;cursor:pointer}
+::selection{background:rgba(14,107,125,.16)}
+:focus-visible{outline:none;box-shadow:var(--focus);border-radius:8px}
+
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+.tnum{font-variant-numeric:tabular-nums}
+
+/* ============================================================ HEADER */
+.app-header{
+  position:sticky;top:0;z-index:60;
+  height:var(--header-h);
+  background:linear-gradient(180deg,var(--primary-deep),var(--primary-dark));
+  color:#EAF6F8;
+  display:flex;align-items:center;gap:18px;
+  padding:0 22px;
+  box-shadow:0 4px 20px rgba(8,59,70,.28);
+}
+.brand{display:flex;align-items:center;gap:13px;min-width:0}
+.brand-mark{
+  width:38px;height:38px;border-radius:11px;flex:0 0 auto;
+  background:linear-gradient(140deg,#159Aae,#0E6B7D);
+  display:grid;place-items:center;
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.18), 0 4px 12px rgba(0,0,0,.25);
+}
+.brand-mark svg{width:21px;height:21px}
+.brand-txt{min-width:0}
+.brand-txt .t1{font-family:var(--display);font-weight:600;font-size:15.5px;line-height:1.1;color:#fff;letter-spacing:-.01em;white-space:nowrap}
+.brand-txt .t2{font-size:11px;color:#A9D4DC;letter-spacing:.14em;text-transform:uppercase;margin-top:2px;white-space:nowrap}
+.header-spacer{flex:1 1 auto}
+.header-right{display:flex;align-items:center;gap:12px}
+.data-status{
+  display:flex;align-items:center;gap:9px;
+  background:rgba(255,255,255,.08);
+  border:1px solid rgba(255,255,255,.14);
+  padding:7px 12px;border-radius:11px;
+  font-size:12px;color:#CFE7EC;white-space:nowrap;
+}
+.data-status .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);box-shadow:0 0 0 3px rgba(255,255,255,.08)}
+.data-status.live .dot{background:#38D39F;box-shadow:0 0 0 3px rgba(56,211,159,.18);animation:pulse 2.4s infinite}
+.data-status.sample .dot{background:var(--accent);box-shadow:0 0 0 3px rgba(232,151,26,.2)}
+.data-status.err .dot{background:#F0685E}
+.data-status .meta{display:flex;flex-direction:column;line-height:1.15}
+.data-status .meta b{color:#fff;font-weight:600;font-size:11.5px}
+.data-status .meta span{font-size:10px;color:#9FCBD3}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+
+.btn{
+  display:inline-flex;align-items:center;gap:8px;
+  border:none;border-radius:11px;
+  padding:9px 15px;font-size:13px;font-weight:600;
+  transition:transform .12s ease, box-shadow .12s ease, background .15s ease;
+}
+.btn:active{transform:translateY(1px)}
+.btn-refresh{
+  background:linear-gradient(180deg,#20A6BC,#0E7C90);
+  color:#fff;box-shadow:0 4px 14px rgba(14,124,144,.4), inset 0 1px 0 rgba(255,255,255,.2);
+}
+.btn-refresh:hover{box-shadow:0 6px 18px rgba(14,124,144,.5), inset 0 1px 0 rgba(255,255,255,.25)}
+.btn-refresh svg{width:15px;height:15px}
+.btn-refresh.loading svg{animation:spin .8s linear infinite}
+.btn-refresh.loading{pointer-events:none;opacity:.85}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ============================================================ FILTER BAR */
+.filter-bar{
+  position:sticky;top:var(--header-h);z-index:55;
+  background:rgba(255,255,255,.82);
+  backdrop-filter:saturate(160%) blur(10px);
+  border-bottom:1px solid var(--line);
+  padding:11px 22px;
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  box-shadow:0 1px 0 rgba(11,46,54,.02);
+}
+.filter-group{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.filter{position:relative;display:flex;flex-direction:column;gap:4px}
+.filter label{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);padding-left:2px}
+.select-wrap{position:relative}
+.select-wrap svg{position:absolute;right:11px;top:50%;transform:translateY(-50%);width:13px;height:13px;pointer-events:none;color:var(--muted)}
+select.f-select{
+  appearance:none;-webkit-appearance:none;
+  font-family:var(--sans);font-size:13px;font-weight:500;color:var(--ink);
+  background:var(--surface);
+  border:1px solid var(--line);border-radius:10px;
+  padding:8px 32px 8px 12px;min-width:158px;
+  transition:border-color .15s, box-shadow .15s;
+  cursor:pointer;
+}
+select.f-select:hover{border-color:var(--primary-tint-2)}
+select.f-select:focus{border-color:var(--primary);box-shadow:var(--focus)}
+.filter-flex{flex:1 1 auto}
+.filter-meta{
+  display:flex;align-items:center;gap:10px;
+  font-size:12.5px;color:var(--muted);
+}
+.count-chip{
+  font-family:var(--mono);font-size:12px;font-weight:600;
+  background:var(--primary-tint);color:var(--primary-deep);
+  padding:6px 11px;border-radius:9px;border:1px solid var(--primary-tint-2);
+  white-space:nowrap;
+}
+.count-chip b{color:var(--primary)}
+.btn-reset{
+  background:transparent;border:1px solid var(--line);color:var(--muted);
+  padding:8px 13px;border-radius:10px;font-size:12.5px;font-weight:600;
+  display:inline-flex;align-items:center;gap:6px;transition:all .15s;
+}
+.btn-reset:hover{border-color:var(--poor-line);color:var(--poor);background:var(--poor-bg)}
+.btn-reset svg{width:13px;height:13px}
+.active-chips{display:flex;gap:7px;flex-wrap:wrap}
+.chip{
+  display:inline-flex;align-items:center;gap:6px;
+  background:var(--primary);color:#fff;font-size:11.5px;font-weight:600;
+  padding:5px 8px 5px 11px;border-radius:20px;
+  box-shadow:0 2px 6px rgba(14,107,125,.25);animation:chipIn .2s ease;
+}
+@keyframes chipIn{from{opacity:0;transform:scale(.85)}to{opacity:1;transform:scale(1)}}
+.chip button{background:rgba(255,255,255,.22);border:none;color:#fff;width:16px;height:16px;border-radius:50%;display:grid;place-items:center;font-size:11px;line-height:1;padding:0}
+.chip button:hover{background:rgba(255,255,255,.4)}
+
+/* ============================================================ TABS */
+.tabs{
+  position:sticky;top:calc(var(--header-h) + var(--filter-h));z-index:50;
+  background:rgba(237,241,243,.9);
+  backdrop-filter:blur(8px);
+  padding:10px 22px 0;
+  border-bottom:1px solid var(--line);
+  display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;
+}
+.tabs::-webkit-scrollbar{display:none}
+.tab{
+  border:none;background:transparent;
+  font-family:var(--display);font-size:13.5px;font-weight:600;color:var(--muted);
+  padding:11px 16px 13px;border-radius:10px 10px 0 0;
+  position:relative;white-space:nowrap;transition:color .15s, background .15s;
+  display:inline-flex;align-items:center;gap:8px;
+}
+.tab .tab-ic{width:15px;height:15px;opacity:.7}
+.tab:hover{color:var(--primary-deep);background:rgba(14,107,125,.05)}
+.tab.active{color:var(--primary-deep)}
+.tab.active .tab-ic{opacity:1}
+.tab.active::after{
+  content:"";position:absolute;left:12px;right:12px;bottom:-1px;height:3px;
+  background:linear-gradient(90deg,var(--primary),#20A6BC);border-radius:3px 3px 0 0;
+}
+
+/* ============================================================ LAYOUT */
+.wrap{max-width:1440px;margin:0 auto;padding:26px 22px 90px}
+.view{display:none;animation:viewIn .35s ease}
+.view.active{display:block}
+@keyframes viewIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+.section{margin-bottom:26px}
+.section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:14px;flex-wrap:wrap}
+.section-title{display:flex;align-items:center;gap:11px}
+.section-title .st-ic{
+  width:34px;height:34px;border-radius:10px;flex:0 0 auto;
+  background:var(--primary-tint);color:var(--primary-deep);
+  display:grid;place-items:center;border:1px solid var(--primary-tint-2);
+}
+.section-title .st-ic svg{width:17px;height:17px}
+.section-title h2{font-size:17px}
+.section-title .sub{font-size:12px;color:var(--muted);margin-top:2px;font-family:var(--sans);font-weight:400}
+.section-note{font-size:11.5px;color:var(--faint);display:flex;align-items:center;gap:6px}
+.section-note svg{width:13px;height:13px}
+
+.card{
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius);box-shadow:var(--shadow-sm);
+  overflow:hidden;
+}
+.card-pad{padding:18px}
+.card-head{padding:15px 18px 12px;border-bottom:1px solid var(--line-soft);display:flex;align-items:center;justify-content:space-between;gap:12px}
+.card-head h3{font-size:14.5px}
+.card-head .ch-sub{font-size:11.5px;color:var(--muted)}
+.grid{display:grid;gap:16px}
+.g-2{grid-template-columns:repeat(2,1fr)}
+.g-3{grid-template-columns:repeat(3,1fr)}
+.g-12-5{grid-template-columns:7fr 5fr}
+.g-12-4{grid-template-columns:8fr 4fr}
+.g-2-1{grid-template-columns:2fr 1fr}
+
+/* ============================================================ HERO + KPI */
+.exec-grid{display:grid;grid-template-columns:1.55fr 1fr;gap:16px;margin-bottom:16px}
+.hero{
+  background:linear-gradient(150deg,var(--primary-dark),var(--primary-deep) 60%,#0C5C6D);
+  border-radius:var(--radius-lg);color:#EAF6F8;
+  padding:22px 24px;position:relative;overflow:hidden;
+  box-shadow:var(--shadow);
+}
+.hero::before{content:"";position:absolute;right:-60px;top:-60px;width:240px;height:240px;border-radius:50%;background:radial-gradient(circle,rgba(56,211,159,.16),transparent 70%)}
+.hero-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;position:relative}
+.hero-label{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:#9FCBD3;font-weight:600}
+.hero-score{display:flex;align-items:baseline;gap:10px;margin-top:6px}
+.hero-score .big{font-family:var(--mono);font-weight:600;font-size:58px;line-height:1;color:#fff;letter-spacing:-.02em}
+.hero-score .pct{font-family:var(--mono);font-size:22px;color:#8FC7D0;font-weight:500}
+.hero-delta{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:12.5px;font-weight:600;padding:5px 9px;border-radius:8px;margin-top:8px}
+.hero-delta.up{background:rgba(56,211,159,.18);color:#8FF0CC}
+.hero-delta.down{background:rgba(240,104,94,.16);color:#FBB4AD}
+.hero-delta.flat{background:rgba(255,255,255,.1);color:#BFDCE2}
+.hero-delta svg{width:13px;height:13px}
+.hero-rating{text-align:right}
+.hero-rating .rr-badge{display:inline-block;padding:6px 12px;border-radius:20px;font-weight:700;font-size:12.5px;letter-spacing:.02em}
+.hero-rating .rr-sub{font-size:11px;color:#9FCBD3;margin-top:6px}
+
+.band-meter{margin-top:20px;position:relative}
+.band-track{display:flex;height:12px;border-radius:8px;overflow:hidden;box-shadow:inset 0 1px 3px rgba(0,0,0,.3)}
+.band-seg{flex:1;position:relative}
+.band-labels{display:flex;margin-top:7px}
+.band-labels span{flex:1;text-align:center;font-family:var(--mono);font-size:9.5px;color:#82B4BD;letter-spacing:.02em}
+.band-marker{position:absolute;top:-6px;width:3px;height:24px;background:#fff;border-radius:3px;box-shadow:0 0 0 2px rgba(11,46,54,.4),0 2px 8px rgba(0,0,0,.4);transition:left .8s cubic-bezier(.22,1,.36,1)}
+.band-marker::after{content:attr(data-v);position:absolute;top:-20px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:10px;font-weight:600;color:#fff;white-space:nowrap;background:rgba(11,46,54,.55);padding:2px 6px;border-radius:6px}
+.hero-spark{margin-top:18px;display:flex;align-items:flex-end;gap:14px}
+.spark-box{flex:1}
+.spark-box .sl{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#82B4BD;margin-bottom:6px}
+#heroSpark{width:100%;height:44px}
+
+.hero-side{display:grid;grid-template-rows:repeat(2,1fr);gap:16px}
+.mini-kpi{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:15px 17px;box-shadow:var(--shadow-sm);display:flex;flex-direction:column;justify-content:center;
+}
+.mini-kpi .mk-top{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:11.5px;font-weight:600;letter-spacing:.02em}
+.mini-kpi .mk-ic{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;flex:0 0 auto}
+.mini-kpi .mk-val{font-family:var(--mono);font-size:30px;font-weight:600;color:var(--ink);margin-top:8px;line-height:1}
+.mini-kpi .mk-sub{font-size:11.5px;color:var(--faint);margin-top:5px}
+
+.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.kpi{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:16px 17px;box-shadow:var(--shadow-sm);position:relative;overflow:hidden;
+  transition:transform .18s ease, box-shadow .18s ease;
+  opacity:0;transform:translateY(10px);
+}
+.kpi.in{opacity:1;transform:none}
+.kpi:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
+.kpi::after{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--primary);opacity:.85}
+.kpi.k-good::after{background:var(--good)} .kpi.k-warn::after{background:var(--avg)} .kpi.k-bad::after{background:var(--poor)} .kpi.k-accent::after{background:var(--accent)}
+.kpi-top{display:flex;align-items:center;justify-content:space-between}
+.kpi-name{font-size:11.5px;font-weight:600;color:var(--muted);letter-spacing:.02em}
+.kpi-ic{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;background:var(--primary-tint);color:var(--primary-deep)}
+.kpi-ic svg{width:16px;height:16px}
+.kpi-val{font-family:var(--mono);font-size:29px;font-weight:600;color:var(--ink);margin-top:10px;line-height:1}
+.kpi-val small{font-size:16px;color:var(--faint);font-weight:500}
+.kpi-foot{font-size:11.5px;color:var(--faint);margin-top:7px;display:flex;align-items:center;gap:6px}
+
+/* ============================================================ TABLES */
+.tbl-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table.tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
+table.tbl thead th{
+  position:sticky;top:0;z-index:2;
+  background:var(--primary-deep);color:#EAF6F8;
+  font-family:var(--display);font-weight:600;font-size:11.5px;letter-spacing:.03em;
+  text-align:left;padding:11px 14px;white-space:nowrap;
+}
+table.tbl thead th:first-child{border-top-left-radius:12px}
+table.tbl thead th:last-child{border-top-right-radius:12px}
+table.tbl thead th.num,table.tbl td.num{text-align:right;font-variant-numeric:tabular-nums}
+table.tbl thead th.ctr,table.tbl td.ctr{text-align:center}
+table.tbl thead th.sortable{cursor:pointer;user-select:none}
+table.tbl thead th.sortable:hover{background:var(--primary)}
+th .th-in{display:inline-flex;align-items:center;gap:6px}
+th.num .th-in{flex-direction:row-reverse}
+.sort-ind{opacity:.4;font-size:9px;transition:opacity .15s}
+th.sorted .sort-ind{opacity:1;color:#7FE8CB}
+table.tbl tbody td{padding:10px 14px;border-bottom:1px solid var(--line-soft);color:var(--ink-soft)}
+table.tbl tbody tr:last-child td{border-bottom:none}
+table.tbl tbody tr{transition:background .12s}
+table.tbl tbody tr:hover{background:var(--surface-2)}
+table.tbl tbody td.name{color:var(--ink);font-weight:600}
+table.tbl .mono-cell{font-family:var(--mono);font-variant-numeric:tabular-nums}
+tr.grand td{background:var(--primary-tint)!important;font-weight:700;color:var(--primary-dark);border-top:2px solid var(--primary-tint-2)}
+tr.grand td.mono-cell{color:var(--primary-dark)}
+.row-click{cursor:pointer}
+.row-click:hover{background:var(--primary-tint)!important}
+
+.rank-badge{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;font-family:var(--mono);font-weight:600;font-size:12px;background:var(--surface-2);color:var(--muted);border:1px solid var(--line)}
+.rank-badge.r1{background:linear-gradient(140deg,#F6D365,#E8971A);color:#5c3d02;border:none;box-shadow:0 2px 6px rgba(232,151,26,.3)}
+.rank-badge.r2{background:linear-gradient(140deg,#E8EDEF,#C6D2D6);color:#3a4a4e;border:none}
+.rank-badge.r3{background:linear-gradient(140deg,#E8C9A8,#CE9B6E);color:#5a3a1a;border:none}
+
+/* performance pill (3-band conditional format) */
+.pill{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-weight:600;font-size:12.5px;padding:4px 10px;border-radius:8px;min-width:62px;justify-content:center}
+.pill.good{background:var(--good-bg);color:var(--good);box-shadow:inset 2px 0 0 var(--good)}
+.pill.avg{background:var(--avg-bg);color:var(--avg);box-shadow:inset 2px 0 0 var(--avg)}
+.pill.poor{background:var(--poor-bg);color:var(--poor);box-shadow:inset 2px 0 0 var(--poor)}
+.pill.na{background:var(--surface-2);color:var(--faint);box-shadow:none;font-weight:500}
+/* soft cell tint for weekly matrices */
+td.cell-good{background:rgba(23,145,106,.09)} td.cell-avg{background:rgba(200,138,8,.1)} td.cell-poor{background:rgba(198,65,59,.09)}
+td.cell-good .mono-cell,td.cell-good{color:var(--good)} 
+.tag-fatal{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.05em;color:var(--poor);background:var(--poor-bg);border:1px solid var(--poor-line);padding:1px 5px;border-radius:5px;margin-left:6px;vertical-align:middle}
+.legend{display:flex;gap:14px;flex-wrap:wrap;align-items:center;font-size:11.5px;color:var(--muted)}
+.legend .lg{display:inline-flex;align-items:center;gap:6px}
+.legend .sw{width:12px;height:12px;border-radius:4px}
+
+/* TL performance group cards */
+.tl-group{margin-bottom:14px}
+.tl-group-head{
+  display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  padding:13px 16px;background:linear-gradient(180deg,var(--surface),var(--surface-2));
+  border:1px solid var(--line);border-bottom:none;border-radius:14px 14px 0 0;cursor:pointer;
+}
+.tl-group-head:hover{background:var(--primary-tint)}
+.tlg-left{display:flex;align-items:center;gap:12px;min-width:0}
+.tlg-avatar{width:36px;height:36px;border-radius:10px;background:var(--primary);color:#fff;display:grid;place-items:center;font-family:var(--display);font-weight:600;font-size:14px;flex:0 0 auto}
+.tlg-name{font-family:var(--display);font-weight:600;font-size:14.5px;color:var(--ink)}
+.tlg-meta{font-size:11.5px;color:var(--muted);margin-top:1px}
+.tlg-right{display:flex;align-items:center;gap:16px}
+.tlg-stat{text-align:right}
+.tlg-stat .v{font-family:var(--mono);font-weight:600;font-size:16px;color:var(--ink)}
+.tlg-stat .l{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em}
+.tlg-chevron{transition:transform .2s;color:var(--muted)}
+.tl-group.collapsed .tlg-chevron{transform:rotate(-90deg)}
+.tl-group-body{border:1px solid var(--line);border-radius:0 0 14px 14px;overflow:hidden;transition:max-height .3s ease}
+.tl-group.collapsed .tl-group-body{display:none}
+
+/* ============================================================ CHARTS */
+.chart{width:100%}
+#paretoChart{height:400px} #statusDonut{height:320px} #improveChart{height:380px}
+#distChart{height:300px} #fatalTrendChart{height:300px} #fatalVerticalChart{height:290px}
+#fatalTLChart{height:290px} #fatalWeekChart{height:260px} #paramPerfChart{height:360px}
+.chart-empty{height:100%;display:grid;place-items:center;color:var(--faint);font-size:13px;text-align:center;padding:20px}
+.insight{
+  background:linear-gradient(180deg,var(--accent-soft),#FEF8EC);
+  border:1px solid #F1DEB0;border-left:4px solid var(--accent);
+  border-radius:12px;padding:13px 15px;font-size:12.5px;color:#7a5a12;
+  display:flex;gap:10px;align-items:flex-start;line-height:1.55;
+}
+.insight svg{width:16px;height:16px;flex:0 0 auto;margin-top:1px;color:var(--accent)}
+.insight b{color:#5c4209;font-weight:700}
+.insight-list{display:grid;gap:9px}
+
+.pareto-legend{display:flex;gap:16px;flex-wrap:wrap;padding:12px 18px 0}
+.mini-stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px}
+.mini-stat{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:13px 15px}
+.mini-stat .v{font-family:var(--mono);font-weight:600;font-size:22px;color:var(--ink)}
+.mini-stat .l{font-size:11px;color:var(--muted);margin-top:3px}
+
+/* ============================================================ DETAIL TABLE */
+.detail-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:15px 18px;border-bottom:1px solid var(--line-soft)}
+.search-box{position:relative;flex:1 1 260px;max-width:360px}
+.search-box svg{position:absolute;left:12px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--faint)}
+.search-box input{
+  width:100%;font-family:var(--sans);font-size:13px;
+  border:1px solid var(--line);border-radius:10px;padding:9px 12px 9px 34px;color:var(--ink);
+  transition:border-color .15s, box-shadow .15s;background:var(--surface-2);
+}
+.search-box input:focus{border-color:var(--primary);box-shadow:var(--focus);background:var(--surface)}
+.detail-controls .spacer{flex:1}
+.page-size{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted)}
+.page-size select{appearance:none;-webkit-appearance:none;border:1px solid var(--line);border-radius:8px;padding:7px 26px 7px 10px;font-family:var(--sans);font-size:12.5px;background:var(--surface) url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%235E767E' stroke-width='2.5'><polyline points='6 9 12 15 18 9'/></svg>") no-repeat right 9px center;cursor:pointer}
+.btn-export{background:var(--primary);color:#fff;border:none;border-radius:10px;padding:9px 14px;font-size:12.5px;font-weight:600;display:inline-flex;align-items:center;gap:7px;box-shadow:0 2px 8px rgba(14,107,125,.25);transition:all .15s}
+.btn-export:hover{background:var(--primary-deep);box-shadow:0 4px 12px rgba(14,107,125,.35)}
+.btn-export svg{width:14px;height:14px}
+.pagination{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:14px 18px}
+.pag-info{font-size:12.5px;color:var(--muted)}
+.pag-info b{color:var(--ink);font-family:var(--mono)}
+.pag-btns{display:flex;gap:6px;align-items:center}
+.pag-btn{width:34px;height:34px;border:1px solid var(--line);background:var(--surface);border-radius:9px;display:grid;place-items:center;color:var(--muted);font-family:var(--mono);font-size:12.5px;transition:all .15s}
+.pag-btn:hover:not(:disabled){border-color:var(--primary);color:var(--primary)}
+.pag-btn.active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.pag-btn:disabled{opacity:.4;cursor:not-allowed}
+.pag-btn svg{width:14px;height:14px}
+.fatal-badge{font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px}
+.fatal-badge.yes{background:var(--poor-bg);color:var(--poor)}
+.fatal-badge.no{background:var(--good-bg);color:var(--good)}
+
+/* ============================================================ TOAST + LOADER */
+.toast-wrap{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:200;display:flex;flex-direction:column;gap:10px;align-items:center}
+.toast{
+  display:flex;align-items:center;gap:11px;
+  background:var(--ink);color:#EAF6F8;
+  padding:13px 18px;border-radius:13px;box-shadow:var(--shadow-lg);
+  font-size:13px;font-weight:500;animation:toastIn .3s cubic-bezier(.22,1,.36,1);
+  max-width:90vw;
+}
+.toast.out{animation:toastOut .3s ease forwards}
+.toast .t-ic{width:22px;height:22px;border-radius:7px;display:grid;place-items:center;flex:0 0 auto}
+.toast.ok .t-ic{background:rgba(56,211,159,.2);color:#38D39F}
+.toast.err .t-ic{background:rgba(240,104,94,.2);color:#F0685E}
+.toast b{color:#fff}
+@keyframes toastIn{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+@keyframes toastOut{to{opacity:0;transform:translateX(-50%) translateY(20px)}}
+
+.overlay{position:fixed;inset:0;z-index:150;background:rgba(237,241,243,.7);backdrop-filter:blur(4px);display:grid;place-items:center;transition:opacity .3s}
+.overlay.hide{opacity:0;pointer-events:none}
+.loader-card{background:var(--surface);border-radius:18px;padding:30px 40px;box-shadow:var(--shadow-lg);text-align:center;display:flex;flex-direction:column;align-items:center;gap:16px}
+.spinner{width:44px;height:44px;border:4px solid var(--primary-tint-2);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite}
+.loader-card .lt{font-family:var(--display);font-weight:600;color:var(--ink);font-size:15px}
+.loader-card .ls{font-size:12.5px;color:var(--muted)}
+
+.empty-state{padding:50px 20px;text-align:center;color:var(--muted)}
+.empty-state svg{width:40px;height:40px;color:var(--line);margin-bottom:12px}
+.empty-state h3{font-size:15px;color:var(--ink-soft);margin-bottom:5px}
+.empty-state p{font-size:13px;max-width:340px;margin:0 auto}
+
+.app-footer{max-width:1440px;margin:0 auto;padding:20px 22px 40px;color:var(--faint);font-size:11.5px;display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;border-top:1px solid var(--line);margin-top:10px}
+.app-footer a{color:var(--muted);text-decoration:none;font-weight:600}
+.app-footer a:hover{color:var(--primary)}
+
+/* ============================================================ RESPONSIVE */
+@media (max-width:1080px){
+  .exec-grid{grid-template-columns:1fr} .hero-side{grid-template-rows:none;grid-template-columns:repeat(2,1fr)}
+  .kpi-grid{grid-template-columns:repeat(2,1fr)}
+  .g-2,.g-3,.g-12-5,.g-12-4,.g-2-1{grid-template-columns:1fr}
+}
+@media (max-width:640px){
+  :root{--header-h:auto}
+  .app-header{flex-wrap:wrap;height:auto;padding:12px 16px;gap:12px}
+  .header-right{width:100%;justify-content:space-between}
+  .wrap{padding:18px 14px 70px}
+  .kpi-grid{grid-template-columns:1fr} .hero-side{grid-template-columns:1fr}
+  .hero-score .big{font-size:46px}
+  select.f-select{min-width:130px;flex:1}
+  .filter{flex:1 1 140px}
+  .tabs{top:auto;position:sticky}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.001ms!important;transition-duration:.001ms!important}
+  .band-marker,.kpi{transition:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ===================== HEADER ===================== -->
+<header class="app-header">
+  <div class="brand">
+    <div class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+    </div>
+    <div class="brand-txt">
+      <div class="t1">Sales Quality Audit Intelligence</div>
+      <div class="t2">Frido&nbsp;·&nbsp;Leadership Review</div>
+    </div>
+  </div>
+  <div class="header-spacer"></div>
+  <div class="header-right">
+    <div class="data-status" id="dataStatus">
+      <span class="dot"></span>
+      <div class="meta"><b id="dsMain">Loading…</b><span id="dsSub">fetching source</span></div>
+    </div>
+    <button class="btn btn-refresh" id="refreshBtn" title="Fetch the latest data from Google Sheets">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      Refresh Data
+    </button>
+  </div>
+</header>
+
+<!-- ===================== FILTER BAR ===================== -->
+<div class="filter-bar">
+  <div class="filter-group">
+    <div class="filter">
+      <label for="fMonth">Month</label>
+      <div class="select-wrap">
+        <select class="f-select" id="fMonth"><option value="__all">All Months</option></select>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+    </div>
+    <div class="filter">
+      <label for="fVertical">Vertical</label>
+      <div class="select-wrap">
+        <select class="f-select" id="fVertical"><option value="__all">All Verticals</option></select>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+    </div>
+    <div class="filter">
+      <label for="fTL">Team Leader</label>
+      <div class="select-wrap">
+        <select class="f-select" id="fTL"><option value="__all">All Team Leaders</option></select>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </div>
+    </div>
+    <button class="btn-reset" id="resetBtn">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+      Reset
+    </button>
+  </div>
+  <div class="filter-flex"></div>
+  <div class="filter-meta">
+    <div class="active-chips" id="activeChips"></div>
+    <span class="count-chip">Showing <b id="cShown">0</b> of <b id="cTotal">0</b> audits</span>
+  </div>
+</div>
+
+<!-- ===================== TABS ===================== -->
+<nav class="tabs" id="tabs">
+  <button class="tab active" data-view="overview"><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Overview</button>
+  <button class="tab" data-view="trends"><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-6"/></svg>Trends</button>
+  <button class="tab" data-view="people"><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>Teams &amp; People</button>
+  <button class="tab" data-view="quality"><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Quality &amp; Errors</button>
+  <button class="tab" data-view="fatal"><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>Fatal Audits</button>
+  <button class="tab" data-view="records"><svg class="tab-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>Audit Records</button>
+</nav>
+
+<main class="wrap" id="mainContent">
+  <!-- views injected/toggled by JS -->
+
+  <!-- ========== VIEW: OVERVIEW ========== -->
+  <section class="view active" id="view-overview">
+    <div class="exec-grid">
+      <div class="hero">
+        <div class="hero-top">
+          <div>
+            <div class="hero-label">Overall Quality Score</div>
+            <div class="hero-score"><span class="big" id="heroScore">—</span><span class="pct">%</span></div>
+            <div class="hero-delta flat" id="heroDelta"><span>vs prior week</span></div>
+          </div>
+          <div class="hero-rating">
+            <span class="rr-badge" id="heroRating">—</span>
+            <div class="rr-sub" id="heroRatingSub">across all audits</div>
+          </div>
+        </div>
+        <div class="band-meter">
+          <div class="band-track">
+            <div class="band-seg" style="background:var(--b1)"></div>
+            <div class="band-seg" style="background:var(--b2)"></div>
+            <div class="band-seg" style="background:var(--b3)"></div>
+            <div class="band-seg" style="background:var(--b4)"></div>
+            <div class="band-seg" style="background:var(--b5)"></div>
+            <div class="band-marker" id="bandMarker" data-v="0%" style="left:0%"></div>
+          </div>
+          <div class="band-labels"><span>0–20</span><span>21–40</span><span>41–60</span><span>61–80</span><span>81–100</span></div>
+        </div>
+        <div class="hero-spark">
+          <div class="spark-box">
+            <div class="sl">Weekly quality trajectory</div>
+            <div id="heroSpark"></div>
+          </div>
+        </div>
+      </div>
+      <div class="hero-side">
+        <div class="mini-kpi">
+          <div class="mk-top"><span class="mk-ic" style="background:var(--primary-tint);color:var(--primary-deep)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span>Total Audits</div>
+          <div class="mk-val" id="mkAudits">—</div>
+          <div class="mk-sub" id="mkAuditsSub">calls evaluated</div>
+        </div>
+        <div class="mini-kpi">
+          <div class="mk-top"><span class="mk-ic" style="background:var(--poor-bg);color:var(--poor)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>Fatal Audit Rate</div>
+          <div class="mk-val" id="mkFatalPct">—</div>
+          <div class="mk-sub" id="mkFatalSub">of audited calls</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- KPI GRID -->
+    <div class="section">
+      <div class="kpi-grid" id="kpiGrid"></div>
+    </div>
+
+    <!-- STATUS + VERTICAL -->
+    <div class="grid g-12-5 section">
+      <div class="card">
+        <div class="card-head"><div><h3>Vertical Performance</h3><div class="ch-sub">Audit volume &amp; quality by vertical · click a row to filter</div></div></div>
+        <div class="tbl-scroll"><table class="tbl" id="verticalTbl"></table></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h3>Audit Status Breakdown</h3><div class="ch-sub">Passed clean · passed with errors · fatal</div></div></div>
+        <div class="card-pad"><div id="statusDonut" class="chart"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== VIEW: TRENDS ========== -->
+  <section class="view" id="view-trends">
+    <div class="section">
+      <div class="section-head">
+        <div class="section-title">
+          <span class="st-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-6"/></svg></span>
+          <div><h2>Weekly Quality Trend</h2><div class="sub">Quality score by vertical across the audit weeks</div></div>
+        </div>
+      </div>
+      <div class="card"><div class="tbl-scroll"><table class="tbl" id="weeklyTbl"></table></div></div>
+    </div>
+
+    <div class="grid g-12-4 section">
+      <div class="card">
+        <div class="card-head"><div><h3>Weekly Improvement Trend</h3><div class="ch-sub" id="improveSub">Compare quality trajectory across series</div></div>
+          <div class="select-wrap"><select class="f-select" id="improveMode" style="min-width:150px"><option value="vertical">By Vertical</option><option value="tl">By Team Leader</option><option value="overall">Overall Only</option></select><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></div>
+        </div>
+        <div class="card-pad"><div id="improveChart" class="chart"></div></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h3>Score Distribution</h3><div class="ch-sub">Audits by score band</div></div></div>
+        <div class="card-pad"><div id="distChart" class="chart"></div><div id="distStats" class="insight-list" style="margin-top:12px"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== VIEW: TEAMS & PEOPLE ========== -->
+  <section class="view" id="view-people">
+    <div class="section">
+      <div class="section-head">
+        <div class="section-title">
+          <span class="st-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg></span>
+          <div><h2>Team Leader Performance</h2><div class="sub">Associate-level weekly scorecards · click a leader to expand</div></div>
+        </div>
+        <div class="legend">
+          <span class="lg"><span class="sw" style="background:var(--good)"></span>High ≥ <b id="thHigh">80</b></span>
+          <span class="lg"><span class="sw" style="background:var(--avg)"></span>Average</span>
+          <span class="lg"><span class="sw" style="background:var(--poor)"></span>Low &lt; <b id="thLow">65</b></span>
+        </div>
+      </div>
+      <div id="tlPerformance"></div>
+    </div>
+
+    <div class="grid g-2 section">
+      <div class="card">
+        <div class="card-head"><div><h3>Team Leader Ranking</h3><div class="ch-sub">Ranked by average quality score</div></div></div>
+        <div class="tbl-scroll"><table class="tbl" id="tlRankTbl"></table></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h3>Auditor Analysis</h3><div class="ch-sub">Coverage &amp; scoring by auditor</div></div></div>
+        <div class="tbl-scroll"><table class="tbl" id="auditorTbl"></table></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="card">
+        <div class="card-head"><div><h3>Associate Ranking</h3><div class="ch-sub">All associates · click any column header to sort</div></div></div>
+        <div class="tbl-scroll"><table class="tbl" id="associateTbl"></table></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== VIEW: QUALITY & ERRORS ========== -->
+  <section class="view" id="view-quality">
+    <div class="grid g-12-5 section">
+      <div class="card">
+        <div class="card-head"><div><h3>Parameter-wise Error Analysis</h3><div class="ch-sub">Ranked by error frequency</div></div><span class="ch-sub" id="totalErrLabel"></span></div>
+        <div class="tbl-scroll"><table class="tbl" id="paramErrTbl"></table></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div><h3>Pareto — Error Concentration</h3><div class="ch-sub">Bars = error count · line = cumulative %</div></div></div>
+        <div class="card-pad">
+          <div id="paretoChart" class="chart"></div>
+          <div id="paretoInsight" style="margin-top:12px"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <div class="section-title">
+          <span class="st-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
+          <div><h2>Parameter Performance</h2><div class="sub">Achievement against weighted maximum · weakest parameters flagged</div></div>
+        </div>
+      </div>
+      <div class="grid g-12-4">
+        <div class="card"><div class="tbl-scroll"><table class="tbl" id="paramPerfTbl"></table></div></div>
+        <div class="card"><div class="card-head"><div><h3>Achievement %</h3><div class="ch-sub">Lower = coaching priority</div></div></div><div class="card-pad"><div id="paramPerfChart" class="chart"></div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== VIEW: FATAL ========== -->
+  <section class="view" id="view-fatal">
+    <div class="section">
+      <div class="kpi-grid" id="fatalKpis" style="grid-template-columns:repeat(4,1fr)"></div>
+    </div>
+    <div class="grid g-2 section">
+      <div class="card"><div class="card-head"><div><h3>Fatal Audits by Vertical</h3><div class="ch-sub">Count &amp; rate per vertical</div></div></div><div class="card-pad"><div id="fatalVerticalChart" class="chart"></div></div></div>
+      <div class="card"><div class="card-head"><div><h3>Fatal Audits by Team Leader</h3><div class="ch-sub">Count &amp; rate per leader</div></div></div><div class="card-pad"><div id="fatalTLChart" class="chart"></div></div></div>
+    </div>
+    <div class="grid g-2 section">
+      <div class="card"><div class="card-head"><div><h3>Fatal Audit Trend</h3><div class="ch-sub">Fatal rate week over week</div></div></div><div class="card-pad"><div id="fatalTrendChart" class="chart"></div></div></div>
+      <div class="card"><div class="card-head"><div><h3>Fatal Audits by Week</h3><div class="ch-sub">Weekly fatal volume</div></div></div><div class="card-pad"><div id="fatalWeekChart" class="chart"></div></div></div>
+    </div>
+  </section>
+
+  <!-- ========== VIEW: RECORDS ========== -->
+  <section class="view" id="view-records">
+    <div class="section">
+      <div class="section-head">
+        <div class="section-title">
+          <span class="st-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
+          <div><h2>Detailed Audit Records</h2><div class="sub">Search, sort, paginate &amp; export the filtered audit log</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="detail-controls">
+          <div class="search-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" id="detailSearch" placeholder="Search associate, leader, vertical, auditor…" />
+          </div>
+          <div class="spacer"></div>
+          <div class="page-size"><span>Rows</span><select id="pageSize"><option>10</option><option selected>25</option><option>50</option><option>100</option></select></div>
+          <button class="btn-export" id="exportBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Export CSV</button>
+        </div>
+        <div class="tbl-scroll"><table class="tbl" id="detailTbl"></table></div>
+        <div class="pagination">
+          <div class="pag-info" id="pagInfo"></div>
+          <div class="pag-btns" id="pagBtns"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="app-footer">
+  <span>Frido · Sales Quality Audit Intelligence · Live from Google Sheets</span>
+  <span id="footerMeta"></span>
+</footer>
+
+<div class="toast-wrap" id="toastWrap"></div>
+<div class="overlay" id="overlay">
+  <div class="loader-card">
+    <div class="spinner"></div>
+    <div class="lt">Loading audit data</div>
+    <div class="ls" id="loaderSub">Connecting to Google Sheets…</div>
+  </div>
+</div>
+
+<script>
+/* ============================================================================
+   FRIDO — SALES QUALITY AUDIT DASHBOARD
+   Single-file. Live Google Sheets CSV + embedded fallback.
+   All KPIs, rankings, trends, error counts, Pareto & fatal metrics are
+   computed from the source at runtime. No manual calculation required.
+   ========================================================================== */
+
+/* ----------------------------- CONFIGURATION ----------------------------- */
+const CONFIG = {
+  // Single source of truth. Change this one line to point at a new sheet.
+  SHEET_URL: "https://docs.google.com/spreadsheets/d/e/2PACX-1vRVEY2yHQBA1k4WwrqI3u6m6By4FLanWLsf74UaLZSkVHDw0AQvymEyDcyamhO29-FSwBc9zqydmsfE/pub?gid=1437209433&single=true&output=csv"
+};
+
+// 3-band conditional-formatting thresholds (edit freely)
+const THRESHOLDS = { HIGH: 80, LOW: 65 };
+// Gradient-parameter error threshold (score below this = an error)
+const GRADIENT_ERR_BELOW = 3;
+
+/* --------------------- QUALITY PARAMETER DEFINITIONS ---------------------
+   gradient=true  -> score can be 0..max, error when score < GRADIENT_ERR_BELOW
+   gradient=false -> binary (full marks or 0), error when score == 0
+   fatal=true     -> a designated fatal parameter (labelled, but Fatal column
+                     is the ONLY source of truth for fatal status)
+   aliases        -> normalized fragments used to auto-detect the CSV column   */
+const PARAMS = [
+  { key:"open",    label:"Call Opening",                        weight:4,  fatal:false, gradient:false, aliases:["callopening","opening"] },
+  { key:"probe",   label:"Probing / Checking Preferences",      weight:12, fatal:true,  gradient:false, aliases:["probing","checkingpreference","checkingpreferences","preference","preferences","probe"] },
+  { key:"prod",    label:"Product & Process Knowledge",         weight:12, fatal:true,  gradient:false, aliases:["productprocess","productandprocess","productknowledge","processknowledge","productprocessknowledge"] },
+  { key:"suggest", label:"Suggesting / Shortlisting Correct Product", weight:12, fatal:true, gradient:false, aliases:["suggesting","shortlisting","shortlist","correctproduct","suggestingshortlisting"] },
+  { key:"obj",     label:"Objection Handling",                  weight:8,  fatal:false, gradient:false, aliases:["objectionhandling","objection"] },
+  { key:"urg",     label:"Urgency Creation",                    weight:8,  fatal:false, gradient:false, aliases:["urgencycreation","urgency"] },
+  { key:"follow",  label:"Follow-Up",                           weight:8,  fatal:false, gradient:false, aliases:["followup","follow"] },
+  { key:"wa",      label:"WhatsApp Communication",              weight:8,  fatal:false, gradient:false, aliases:["whatsappcommunication","whatsapp","whatsap"] },
+  { key:"eng",     label:"English Proficiency",                 weight:4,  fatal:false, gradient:true,  aliases:["englishproficiency","english","proficiency"] },
+  { key:"speech",  label:"Speech Clarity",                      weight:4,  fatal:false, gradient:true,  aliases:["speechclarity","speech","clarity"] },
+  { key:"conf",    label:"Confidence / Conviction",             weight:4,  fatal:false, gradient:true,  aliases:["confidenceconviction","confidence","conviction"] },
+  { key:"rapport", label:"Rapport Building / User Engagement",  weight:4,  fatal:false, gradient:true,  aliases:["rapportbuilding","rapport","userengagement","engagement"] },
+  { key:"ref",     label:"Referral / Offer",                    weight:8,  fatal:false, gradient:false, aliases:["referraloffer","referral","offer","offers"] },
+  { key:"close",   label:"Call Closing",                        weight:4,  fatal:false, gradient:false, aliases:["callclosing","closing"] }
+];
+const PARAM_TOTAL_WEIGHT = PARAMS.reduce((s,p)=>s+p.weight,0); // 100
+
+/* Logical field aliases (evaluated after params claim their columns) */
+const FIELD_ALIASES = {
+  timestamp:  ["timestamp","datetime","audittimestamp","submittedon","submissiontime","date","time"],
+  email:      ["emailaddress","email"],
+  auditor:    ["auditorname","auditor","auditedby","evaluator","qaauditor","reviewer","qa"],
+  vertical:   ["vertical","audittype","campaign","category","process","segment"],
+  associate:  ["associatename","associate","agentname","agent","representative","salesrep","employeename","empname","executive","name"],
+  teamLeader: ["teamleadername","teamleader","tlname","tl","reportingmanager","manager","leader","supervisor"],
+  duration:   ["callduration","duration","talktime","calltime","handletime","aht","calllength"],
+  month:      ["auditmonth","month"],
+  year:       ["year"],
+  week:       ["weeknumber","weekno","auditweek","week"],
+  fatal:      ["isfatal","fatalaudit","fatalflag","fatalyesno","fatal"],
+  finalScore: ["finalqualityscore","overallqualityscore","totalqualityscore","finalscore","qualityscore","overallscore","totalscore"]
+};
+
+/* ------------------------------ APP STATE -------------------------------- */
+const STATE = {
+  rows: [],          // processed audit records
+  colMap: {},        // logical field -> header
+  paramMap: {},      // param.key -> header
+  weeks: [],         // sorted week numbers present
+  filters: { month:"__all", vertical:"__all", tl:"__all" },
+  charts: {},        // echarts instances
+  initedViews: {},   // which chart views have been initialised
+  usingSample: false,
+  lastUpdated: null,
+  detail: { page:1, pageSize:25, sort:{key:"score", dir:"desc"}, search:"" },
+  assocSort: { key:"score", dir:"desc" }
+};
+
+/* ------------------------- SMALL UTILITIES ------------------------------- */
+const $ = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+const norm = s => String(s==null?"":s).toLowerCase().replace(/[^a-z0-9]/g,"");
+const clean = s => String(s==null?"":s).trim();
+const num = v => { const n = parseFloat(String(v).replace(/[^0-9.\-]/g,"")); return isFinite(n)?n:NaN; };
+const uniq = a => Array.from(new Set(a));
+const sum = a => a.reduce((s,x)=>s+x,0);
+const mean = a => a.length ? sum(a)/a.length : 0;
+const fmtN = (v,d=1) => (v==null||!isFinite(v)) ? "—" : Number(v).toFixed(d);
+const fmtInt = v => (v==null||!isFinite(v)) ? "—" : Math.round(v).toLocaleString("en-IN");
+const fmtPct = (v,d=1) => (v==null||!isFinite(v)) ? "—" : Number(v).toFixed(d)+"%";
+const esc = s => String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+function band3(score){
+  if(score==null||!isFinite(score)) return "na";
+  if(score>=THRESHOLDS.HIGH) return "good";
+  if(score>=THRESHOLDS.LOW) return "avg";
+  return "poor";
+}
+function pill(score, cls){
+  const b = band3(score);
+  if(b==="na") return '<span class="pill na">—</span>';
+  return `<span class="pill ${b} ${cls||""}">${fmtN(score,1)}</span>`;
+}
+function fmtDuration(sec){
+  if(!isFinite(sec)||sec<=0) return "—";
+  const m=Math.floor(sec/60), s=Math.round(sec%60);
+  if(m>=60){const h=Math.floor(m/60),mm=m%60;return `${h}h ${mm}m`;}
+  return `${m}:${String(s).padStart(2,"0")}`;
+}
+function parseDuration(v){
+  const raw = clean(v);
+  if(!raw) return NaN;
+  if(raw.includes(":")){
+    const p = raw.split(":").map(x=>parseInt(x,10));
+    if(p.some(isNaN)) return NaN;
+    if(p.length===3) return p[0]*3600+p[1]*60+p[2];
+    if(p.length===2) return p[0]*60+p[1];
+    return p[0];
+  }
+  const n = num(raw);
+  if(!isFinite(n)) return NaN;
+  // bare number: treat as minutes if plausible, else seconds
+  return n<=180 ? n*60 : n;
+}
+const MONTH_ORDER = ["january","february","march","april","may","june","july","august","september","october","november","december"];
+// Parses timestamps in mm/dd/yyyy or mm-dd-yyyy (also yyyy-mm-dd ISO), with an
+// optional time portion in 24h or 12h (AM/PM) form, and optional comma/space/T
+// separator. Also handles bare Google-Sheets/Excel serial date numbers.
+// Returns {month:"June 2026", monthName:"june", year:2026, date:Date} or null.
+function parseTimestamp(raw){
+  const s = clean(raw);
+  if(!s) return null;
+
+  // Excel/Google Sheets serial date (e.g. 46215 or 46215.604) — days since 1899-12-30
+  if(/^\d{4,6}(\.\d+)?$/.test(s)){
+    const serial = parseFloat(s);
+    if(serial>20000 && serial<80000){ // sane range: ~1954-2119
+      const epoch = new Date(Date.UTC(1899,11,30));
+      const date = new Date(epoch.getTime() + serial*86400000);
+      const mo = date.getUTCMonth(), yr = date.getUTCFullYear();
+      const monthName = MONTH_ORDER[mo];
+      return { month: monthName.charAt(0).toUpperCase()+monthName.slice(1)+" "+yr, monthName, year: yr, date };
+    }
+    return null;
+  }
+
+  // ISO-style yyyy-mm-dd[ T]hh:mm[:ss][ AM/PM]
+  let m = s.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})(?:[ T,]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?)?$/);
+  if(m){
+    const yr = parseInt(m[1],10), mo = parseInt(m[2],10), da = parseInt(m[3],10);
+    let hh = m[4]?parseInt(m[4],10):0; const mm = m[5]?parseInt(m[5],10):0, ss = m[6]?parseInt(m[6],10):0;
+    const ap = (m[7]||"").toLowerCase();
+    if(ap==="pm" && hh<12) hh+=12; if(ap==="am" && hh===12) hh=0;
+    if(mo<1||mo>12||da<1||da>31) return null;
+    const date = new Date(yr, mo-1, da, hh, mm, ss);
+    const monthName = MONTH_ORDER[mo-1];
+    return { month: monthName.charAt(0).toUpperCase()+monthName.slice(1)+" "+yr, monthName, year: yr, date };
+  }
+
+  // mm/dd/yyyy or mm-dd-yyyy, optional time (24h or 12h AM/PM), optional comma/T separator
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})(?:[ T,]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM|am|pm)?)?$/);
+  if(m){
+    const mo = parseInt(m[1],10), da = parseInt(m[2],10), yr = parseInt(m[3],10);
+    if(mo<1||mo>12||da<1||da>31) return null;
+    let hh = m[4]?parseInt(m[4],10):0; const mm = m[5]?parseInt(m[5],10):0, ss = m[6]?parseInt(m[6],10):0;
+    const ap = (m[7]||"").toLowerCase();
+    if(ap==="pm" && hh<12) hh+=12; if(ap==="am" && hh===12) hh=0;
+    const date = new Date(yr, mo-1, da, hh, mm, ss);
+    const monthName = MONTH_ORDER[mo-1];
+    return { month: monthName.charAt(0).toUpperCase()+monthName.slice(1)+" "+yr, monthName, year: yr, date };
+  }
+
+  return null;
+}
+function monthRank(m){
+  const n = norm(m);
+  const alpha = (n.match(/^[a-z]+/)||[n])[0];
+  const idx = MONTH_ORDER.findIndex(x=>alpha.startsWith(x.slice(0,3)) || x===alpha);
+  const yr = (m.match(/(20\d{2})/)||[])[1];
+  return (yr?parseInt(yr):2000)*100 + (idx>=0?idx:99);
+}
+function weekNum(v){
+  const n = num(String(v).replace(/week/gi,""));
+  return isFinite(n)?n:null;
+}
+
+/* ----------------------- COLUMN AUTO-DETECTION --------------------------- */
+function matchScore(headerNorm, alias){
+  if(headerNorm===alias) return 4;
+  if(headerNorm.startsWith(alias)||headerNorm.endsWith(alias)) return 3;
+  if(headerNorm.includes(alias)) return 2;
+  if(alias.includes(headerNorm) && headerNorm.length>=3) return 1;
+  return 0;
+}
+function greedyAssign(headers, targets){
+  // targets: [{id, aliases}] -> returns {id: header}
+  const hNorm = headers.map(h=>({h, n:norm(h)}));
+  const cand = [];
+  targets.forEach(t=>{
+    hNorm.forEach(({h,n})=>{
+      let best=0;
+      t.aliases.forEach(a=>{ best=Math.max(best, matchScore(n,a)); });
+      if(best>0) cand.push({id:t.id, h, score:best, len:n.length});
+    });
+  });
+  cand.sort((a,b)=> b.score-a.score || a.len-b.len);
+  const usedH=new Set(), usedT=new Set(), out={};
+  cand.forEach(c=>{
+    if(usedH.has(c.h)||usedT.has(c.id)) return;
+    out[c.id]=c.h; usedH.add(c.h); usedT.add(c.id);
+  });
+  return {map:out, usedHeaders:usedH};
+}
+function detectColumns(headers){
+  // Pass 1: parameters (distinctive).
+  // Many sheets have BOTH a plain remarks/notes column (e.g. "Call Opening")
+  // AND the actual numeric score column (e.g. "Score_Call Opening"). To avoid
+  // locking onto the wrong one, first try matching only against headers that
+  // look like score columns (contain "score"), then fall back to all headers
+  // for any parameter that didn't find a match there.
+  const isScoreHeader = h => norm(h).includes("score");
+  const scoreHeaders = headers.filter(isScoreHeader);
+  const otherHeaders = headers.filter(h=>!isScoreHeader(h));
+
+  const pass1 = greedyAssign(scoreHeaders, PARAMS.map(p=>({id:p.key, aliases:p.aliases})));
+  const unmatchedParams = PARAMS.filter(p=>!pass1.map[p.key]);
+  const pass1b = greedyAssign(otherHeaders, unmatchedParams.map(p=>({id:p.key, aliases:p.aliases})));
+
+  const paramMap = { ...pass1.map, ...pass1b.map };
+  STATE.paramMap = paramMap;
+  const usedByParams = new Set([...pass1.usedHeaders, ...pass1b.usedHeaders]);
+
+  console.log("[QA Dashboard] parameter column mapping:", paramMap);
+
+  // Pass 2: logical fields, excluding headers already claimed by params
+  const remaining = headers.filter(h=>!usedByParams.has(h));
+  const p2 = greedyAssign(remaining, Object.keys(FIELD_ALIASES).map(k=>({id:k, aliases:FIELD_ALIASES[k]})));
+  STATE.colMap = p2.map;
+}
+
+/* --------------------------- ROW PROCESSING ------------------------------ */
+function isBlankRow(r){
+  return Object.values(r).every(v=>clean(v)==="");
+}
+function processRows(rawRows){
+  const cm = STATE.colMap, pm = STATE.paramMap;
+  const get = (r,field) => cm[field] ? clean(r[cm[field]]) : "";
+
+  // Content-based sniffing: don't just trust the header-name match for
+  // "timestamp" — test a sample of every column's actual values against
+  // parseTimestamp and use whichever column parses best. This recovers
+  // automatically even if the header is named something unexpected.
+  if(rawRows.length){
+    const headers = Object.keys(rawRows[0]);
+    const sample = rawRows.slice(0, Math.min(30, rawRows.length));
+    let bestHeader = cm.timestamp || null, bestScore = -1;
+    headers.forEach(h=>{
+      let hits = 0, tested = 0;
+      sample.forEach(r=>{
+        const v = clean(r[h]);
+        if(!v) return;
+        tested++;
+        if(parseTimestamp(v)) hits++;
+      });
+      if(tested>0){
+        const rate = hits/tested;
+        // require a strong hit rate so we don't hijack an unrelated column
+        if(rate>=0.7 && (rate>bestScore || (rate===bestScore && h===cm.timestamp))){
+          bestScore = rate; bestHeader = h;
+        }
+      }
+    });
+    if(bestHeader && bestHeader!==cm.timestamp){
+      console.log("[QA Dashboard] overriding timestamp column: alias guessed", cm.timestamp||"(none)", "-> content sniffing picked", bestHeader);
+      cm.timestamp = bestHeader;
+    }
+  }
+
+  console.log("[QA Dashboard] timestamp column detected as:", cm.timestamp || "(none found)");
+  console.log("[QA Dashboard] month column detected as:", cm.month || "(none found)");
+  if(rawRows.length){
+    console.log("[QA Dashboard] sample raw timestamp value:", cm.timestamp ? rawRows[0][cm.timestamp] : "n/a");
+  }
+  let loggedBadTs = 0;
+  const out = [];
+  rawRows.forEach(r=>{
+    if(!r || isBlankRow(r)) return;
+    const associate = get(r,"associate");
+    const vertical  = get(r,"vertical");
+    const tl        = get(r,"teamLeader");
+    // Skip rows with no identifying content at all
+    if(!associate && !vertical && !tl && !get(r,"auditor")) return;
+
+    const fatalRaw = get(r,"fatal");
+    const isFatal = /^y/i.test(fatalRaw) || norm(fatalRaw)==="1" || norm(fatalRaw)==="true";
+
+    // parameter scores + error count
+    const scores = {};
+    let errorCount = 0;
+    PARAMS.forEach(p=>{
+      const col = pm[p.key];
+      let v = col ? num(r[col]) : NaN;
+      scores[p.key] = isFinite(v) ? v : null;
+      if(scores[p.key]!=null){
+        if(p.gradient){ if(scores[p.key] < GRADIENT_ERR_BELOW) errorCount++; }
+        else { if(scores[p.key] === 0) errorCount++; }
+      }
+    });
+
+    // Final quality score: sheet value, but Fatal column forces 0
+    let finalScore = cm.finalScore ? num(r[cm.finalScore]) : NaN;
+    if(!isFinite(finalScore)){
+      // derive from parameter sum if the column is absent
+      const got = PARAMS.reduce((s,p)=> s + (scores[p.key]!=null?scores[p.key]:0), 0);
+      finalScore = got;
+    }
+    if(isFatal) finalScore = 0;
+    finalScore = Math.max(0, Math.min(100, finalScore));
+
+    const wk = weekNum(get(r,"week"));
+    let status = isFatal ? "fatal" : (errorCount>0 ? "errors" : "clean");
+
+    // Derive month/year from the timestamp (handles mm/dd/yyyy, mm-dd-yyyy,
+    // ISO, AM/PM, and serial dates) since this is far more reliable than a
+    // hand-filled month column.
+    const rawTimestamp = get(r,"timestamp");
+    const ts = parseTimestamp(rawTimestamp);
+    if(!ts && rawTimestamp && loggedBadTs<3){
+      console.warn("[QA Dashboard] could not parse timestamp:", JSON.stringify(rawTimestamp));
+      loggedBadTs++;
+    }
+    let month, year;
+    if(ts){
+      month = ts.month; year = ts.year;
+    } else {
+      // Fall back to the sheet's own month column. If it's just a bare
+      // number (1-12), turn it into a readable "Month Year" label using
+      // the sheet's year column when available.
+      const rawMonth = get(r,"month");
+      const yrCol = get(r,"year");
+      if(/^\d{1,2}$/.test(rawMonth) && +rawMonth>=1 && +rawMonth<=12){
+        const mn = MONTH_ORDER[+rawMonth-1];
+        const label = mn.charAt(0).toUpperCase()+mn.slice(1);
+        month = yrCol ? `${label} ${yrCol}` : label;
+        year = yrCol || "";
+      } else {
+        month = rawMonth || "—";
+        year = yrCol;
+      }
+    }
+
+    out.push({
+      timestamp: rawTimestamp,
+      email: get(r,"email"),
+      auditor: get(r,"auditor") || "—",
+      vertical: vertical || "Unspecified",
+      associate: associate || "Unspecified",
+      tl: tl || "Unassigned",
+      durationSec: parseDuration(get(r,"duration")),
+      month,
+      year,
+      week: wk,
+      weekLabel: wk!=null ? "Week "+wk : "—",
+      isFatal, fatalRaw,
+      scores, errorCount, finalScore, status
+    });
+  });
+  return out;
+}
+
+/* ----------------------------- DATA LOADING ------------------------------ */
+function setStatus(kind, main, sub){
+  const el = $("#dataStatus");
+  el.className = "data-status "+kind;
+  $("#dsMain").textContent = main;
+  $("#dsSub").textContent = sub;
+}
+function loadData(isRefresh){
+  const btn = $("#refreshBtn");
+  if(isRefresh){ btn.classList.add("loading"); }
+  else { $("#overlay").classList.remove("hide"); $("#loaderSub").textContent="Connecting to Google Sheets…"; }
+  setStatus("", "Loading…", "fetching source");
+
+  const url = CONFIG.SHEET_URL + (CONFIG.SHEET_URL.includes("?")?"&":"?") + "_cb=" + Date.now(); // cache-bust
+  if(typeof Papa==="undefined" || !Papa || !Papa.parse){ loadFallback(isRefresh, "CSV parser (PapaParse) unavailable — check network/CDN access"); return; }
+  try{
+  Papa.parse(url, {
+    download:true, header:true, skipEmptyLines:"greedy", dynamicTyping:false,
+    complete:(res)=>{
+      try{
+        const rows = (res.data||[]).filter(r=>r && Object.keys(r).length);
+        if(!rows.length) throw new Error("No rows parsed");
+        const headers = (res.meta && res.meta.fields) ? res.meta.fields : Object.keys(rows[0]);
+        detectColumns(headers);
+        const processed = processRows(rows);
+        if(!processed.length) throw new Error("No valid audit rows after processing");
+        STATE.rows = processed;
+        STATE.usingSample = false;
+        STATE.lastUpdated = new Date();
+        finishLoad(isRefresh, false);
+      }catch(err){
+        console.error(err);
+        loadFallback(isRefresh, err.message);
+      }
+    },
+    error:(err)=>{ console.error(err); loadFallback(isRefresh, (err&&err.message)||"network error"); }
+  });
+  }catch(e){ console.error(e); loadFallback(isRefresh, e.message); }
+}
+function loadFallback(isRefresh, reason){
+  try{
+    detectColumns(Object.keys(SAMPLE_ROWS[0]));
+    STATE.rows = processRows(SAMPLE_ROWS);
+    STATE.usingSample = true;
+    STATE.lastUpdated = new Date();
+    finishLoad(isRefresh, true, reason);
+  }catch(e){
+    $("#overlay").classList.add("hide");
+    $("#refreshBtn").classList.remove("loading");
+    setStatus("err","Load failed","check the source URL");
+    toast("err","Could not load data","The Google Sheet could not be reached and the fallback failed.");
+  }
+}
+function finishLoad(isRefresh, sample, reason){
+  computeWeeks();
+  buildFilters();
+  renderAll();
+  $("#overlay").classList.add("hide");
+  $("#refreshBtn").classList.remove("loading");
+  const ts = STATE.lastUpdated.toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"});
+  $("#footerMeta").textContent = (sample?"Sample data · ":"Live · ")+"updated "+ts+" · "+STATE.rows.length+" audits";
+  if(sample){
+    setStatus("sample","Sample data","live fetch unavailable");
+    if(isRefresh) toast("err","Showing sample data", reason?("Live fetch failed: "+reason):"Live source unavailable — displaying embedded snapshot.");
+  }else{
+    setStatus("live","Live · Google Sheets","updated "+ts);
+    if(isRefresh) toast("ok","Data refreshed", STATE.rows.length+" audits loaded · "+ts);
+  }
+}
+function computeWeeks(){
+  STATE.weeks = uniq(STATE.rows.map(r=>r.week).filter(w=>w!=null)).sort((a,b)=>a-b);
+}
+
+/* ------------------------------ FILTERS ---------------------------------- */
+function buildFilters(){
+  const months = uniq(STATE.rows.map(r=>r.month).filter(m=>m&&m!=="—")).sort((a,b)=>monthRank(a)-monthRank(b));
+  const verticals = uniq(STATE.rows.map(r=>r.vertical)).sort();
+  const tls = uniq(STATE.rows.map(r=>r.tl)).sort();
+  fillSelect("#fMonth", months, "All Months", STATE.filters.month);
+  fillSelect("#fVertical", verticals, "All Verticals", STATE.filters.vertical);
+  fillSelect("#fTL", tls, "All Team Leaders", STATE.filters.tl);
+}
+function fillSelect(sel, values, allLabel, current){
+  const el = $(sel);
+  const keep = values.includes(current) ? current : "__all";
+  el.innerHTML = `<option value="__all">${allLabel}</option>` + values.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join("");
+  el.value = keep;
+}
+function filtered(){
+  const f = STATE.filters;
+  return STATE.rows.filter(r=>
+    (f.month==="__all" || r.month===f.month) &&
+    (f.vertical==="__all" || r.vertical===f.vertical) &&
+    (f.tl==="__all" || r.tl===f.tl)
+  );
+}
+function updateChips(){
+  const f = STATE.filters, wrap=$("#activeChips"); wrap.innerHTML="";
+  const add=(k,label,val)=>{ if(val!=="__all"){
+    const c=document.createElement("span"); c.className="chip";
+    c.innerHTML=`${esc(label)}: ${esc(val)} <button data-k="${k}" aria-label="clear">×</button>`;
+    wrap.appendChild(c);
+  }};
+  add("month","Month",f.month); add("vertical","Vertical",f.vertical); add("tl","Leader",f.tl);
+  $$("#activeChips .chip button").forEach(b=>b.onclick=()=>{
+    STATE.filters[b.dataset.k]="__all";
+    $("#f"+({month:"Month",vertical:"Vertical",tl:"TL"}[b.dataset.k])).value="__all";
+    renderAll();
+  });
+}
+
+/* =====================  AGGREGATION HELPERS  ============================= */
+function groupBy(rows, keyFn){
+  const m = new Map();
+  rows.forEach(r=>{ const k=keyFn(r); if(!m.has(k)) m.set(k,[]); m.get(k).push(r); });
+  return m;
+}
+function qScore(rows){ return rows.length ? mean(rows.map(r=>r.finalScore)) : null; }
+function modeOf(arr){
+  const m={}; let best=null,bc=-1;
+  arr.forEach(v=>{ m[v]=(m[v]||0)+1; if(m[v]>bc){bc=m[v];best=v;} });
+  return best;
+}
+
+/* ==============================  RENDER ALL  ============================= */
+function renderAll(){
+  const rows = filtered();
+  $("#cShown").textContent = fmtInt(rows.length);
+  $("#cTotal").textContent = fmtInt(STATE.rows.length);
+  updateChips();
+
+  renderExecutive(rows);
+  renderVerticalTable(rows);
+  renderWeeklyTable(rows);
+  renderTLPerformance(rows);
+  renderTLRanking(rows);
+  renderAssociateRanking(rows);
+  renderAuditorTable(rows);
+  renderParamErrors(rows);
+  renderParamPerformance(rows);
+  renderFatalKpis(rows);
+  renderDetail();
+
+  // charts only for the active view (others render on tab open)
+  renderActiveCharts();
+}
+
+function weeksIn(rows){ return uniq(rows.map(r=>r.week).filter(w=>w!=null)).sort((a,b)=>a-b); }
+
+/* ======================= 1 · EXECUTIVE SUMMARY ========================== */
+function renderExecutive(rows){
+  const overall = qScore(rows);
+  const totalAudits = rows.length;
+  const associates = uniq(rows.map(r=>r.associate)).length;
+  const leaders = uniq(rows.map(r=>r.tl)).length;
+  const errors = sum(rows.map(r=>r.errorCount));
+  const fatal = rows.filter(r=>r.isFatal).length;
+  const fatalPct = totalAudits ? fatal/totalAudits*100 : 0;
+  const durs = rows.map(r=>r.durationSec).filter(d=>isFinite(d)&&d>0);
+  const avgDur = durs.length ? mean(durs) : NaN;
+
+  // Hero
+  $("#heroScore").textContent = overall==null?"—":fmtN(overall,1);
+  const b = band3(overall);
+  const ratingMap = {good:["High Performance",COLP.good],avg:["Average Performance",COLP.avg],poor:["Needs Attention",COLP.poor],na:["No Data","#8DA1A8"]};
+  const rb = $("#heroRating"); rb.textContent = ratingMap[b][0];
+  rb.style.background = hexA(ratingMap[b][1],.18); rb.style.color = tint(ratingMap[b][1]);
+  const pos = overall==null?0:Math.max(0,Math.min(100,overall));
+  const mk = $("#bandMarker"); mk.style.left = pos+"%"; mk.setAttribute("data-v", (overall==null?"—":fmtN(overall,0)+"%"));
+
+  // week-over-week delta
+  const wIn = weeksIn(rows);
+  const weekScores = wIn.map(w=>qScore(rows.filter(r=>r.week===w)));
+  const de = $("#heroDelta");
+  if(weekScores.length>=2 && weekScores[weekScores.length-1]!=null && weekScores[weekScores.length-2]!=null){
+    const d = weekScores[weekScores.length-1]-weekScores[weekScores.length-2];
+    const up = d>=0;
+    de.className = "hero-delta "+(Math.abs(d)<0.05?"flat":(up?"up":"down"));
+    de.innerHTML = `${arrowSvg(up)}<span>${(up?"+":"")}${fmtN(d,1)} pts vs prior week</span>`;
+  } else { de.className="hero-delta flat"; de.innerHTML="<span>vs prior week — n/a</span>"; }
+
+  renderHeroSpark(wIn, weekScores);
+
+  // mini KPIs
+  $("#mkAudits").textContent = fmtInt(totalAudits);
+  $("#mkAuditsSub").textContent = associates+" associates · "+leaders+" leaders";
+  $("#mkFatalPct").textContent = fmtPct(fatalPct,1);
+  $("#mkFatalPct").style.color = fatalPct>10?COLP.poor:(fatalPct>5?COLP.avg:COLP.good);
+  $("#mkFatalSub").textContent = fatal+" of "+totalAudits+" calls";
+
+  // KPI grid (8 cards)
+  const kdef = [
+    {n:"Overall Quality Score", v: overall==null?"—":fmtN(overall,1), unit:"%", ic:icoStar, cls:"k-"+(b==="good"?"good":b==="avg"?"warn":b==="poor"?"bad":""), foot:"weighted average across audits"},
+    {n:"Total Audits", v: fmtInt(totalAudits), ic:icoCheck, cls:"", foot:"calls evaluated in scope"},
+    {n:"Associates Audited", v: fmtInt(associates), ic:icoUser, cls:"", foot:"distinct representatives"},
+    {n:"Team Leaders", v: fmtInt(leaders), ic:icoUsers, cls:"", foot:"leaders with coverage"},
+    {n:"Total Error Count", v: fmtInt(errors), ic:icoBolt, cls:"k-accent", foot:"parameter-level breaches"},
+    {n:"Fatal Audits", v: fmtInt(fatal), ic:icoAlert, cls:"k-bad", foot:"calls flagged fatal"},
+    {n:"Fatal Audit %", v: fmtPct(fatalPct,1), ic:icoPct, cls: fatalPct>10?"k-bad":fatalPct>5?"k-warn":"k-good", foot:"share of audited calls"},
+    {n:"Avg Call Duration", v: fmtDuration(avgDur), ic:icoClock, cls:"", foot:durs.length?"mm:ss across "+durs.length+" calls":"no duration data"}
+  ];
+  $("#kpiGrid").innerHTML = kdef.map(k=>`
+    <div class="kpi ${k.cls}">
+      <div class="kpi-top"><span class="kpi-name">${k.n}</span><span class="kpi-ic">${k.ic}</span></div>
+      <div class="kpi-val">${k.v}${k.unit?`<small>${k.unit}</small>`:""}</div>
+      <div class="kpi-foot">${k.foot}</div>
+    </div>`).join("");
+  // stagger-in
+  requestAnimationFrame(()=>$$("#kpiGrid .kpi").forEach((el,i)=>setTimeout(()=>el.classList.add("in"), i*45)));
+}
+function renderHeroSpark(weeks, scores){
+  const el = document.getElementById("heroSpark"); if(!el) return;
+  if(!haveECharts()) return;
+  const inst = getChart("heroSpark");
+  if(weeks.length<1){ inst.clear(); return; }
+  inst.setOption({
+    grid:{left:2,right:2,top:6,bottom:2},
+    xAxis:{type:"category",data:weeks.map(w=>"W"+w),show:false,boundaryGap:false},
+    yAxis:{type:"value",show:false,scale:true},
+    tooltip:{trigger:"axis",backgroundColor:"rgba(11,46,54,.92)",borderColor:"transparent",textStyle:{color:"#fff",fontSize:11},
+      formatter:p=>`Week ${weeks[p[0].dataIndex]}<br/><b>${fmtN(p[0].value,1)}%</b>`},
+    series:[{type:"line",data:scores.map(s=>s==null?null:+s.toFixed(1)),smooth:true,symbol:"circle",symbolSize:6,
+      lineStyle:{width:2.5,color:"#7FE8CB"},itemStyle:{color:"#fff",borderColor:"#7FE8CB",borderWidth:2},
+      areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:"rgba(127,232,203,.35)"},{offset:1,color:"rgba(127,232,203,0)"}])}}]
+  },true);
+}
+
+/* ======================= 2 · VERTICAL PERFORMANCE ======================= */
+function renderVerticalTable(rows){
+  const g = groupBy(rows, r=>r.vertical);
+  const data = Array.from(g.entries()).map(([v,rs])=>({v, count:rs.length, score:qScore(rs)}))
+    .sort((a,b)=>b.count-a.count);
+  const overall = qScore(rows);
+  let html = `<thead><tr><th>Vertical</th><th class="num">Audit Count</th><th class="num">Quality Score</th><th class="ctr">Rating</th></tr></thead><tbody>`;
+  if(!data.length) html += emptyRow(4);
+  data.forEach(d=>{
+    html += `<tr class="row-click" data-vert="${esc(d.v)}">
+      <td class="name">${esc(d.v)}</td>
+      <td class="num mono-cell">${fmtInt(d.count)}</td>
+      <td class="num mono-cell">${fmtN(d.score,1)}</td>
+      <td class="ctr">${pill(d.score)}</td></tr>`;
+  });
+  html += `<tr class="grand"><td>Grand Total</td><td class="num mono-cell">${fmtInt(rows.length)}</td><td class="num mono-cell">${fmtN(overall,1)}</td><td class="ctr">${pill(overall)}</td></tr>`;
+  html += `</tbody>`;
+  const t = $("#verticalTbl"); t.innerHTML = html;
+  t.querySelectorAll(".row-click").forEach(r=>r.onclick=()=>setFilter("vertical", r.dataset.vert));
+}
+
+/* ======================= 3 · WEEKLY QUALITY TREND ======================= */
+function renderWeeklyTable(rows){
+  const wk = weeksIn(rows);
+  const verts = uniq(rows.map(r=>r.vertical)).sort();
+  let head = `<thead><tr><th>Vertical</th>${wk.map(w=>`<th class="num">Week ${w}</th>`).join("")}<th class="num">Quality Score</th></tr></thead><tbody>`;
+  let body = "";
+  if(!verts.length) body = emptyRow(wk.length+2);
+  verts.forEach(v=>{
+    const vr = rows.filter(r=>r.vertical===v);
+    body += `<tr><td class="name">${esc(v)}</td>`;
+    wk.forEach(w=>{ const s=qScore(vr.filter(r=>r.week===w)); body += `<td class="num mono-cell" style="${tintBg(s)}">${s==null?"—":fmtN(s,1)}</td>`; });
+    body += `<td class="num">${pill(qScore(vr))}</td></tr>`;
+  });
+  // overall row
+  let grand = `<tr class="grand"><td>Overall Quality Score</td>`;
+  wk.forEach(w=>{ const s=qScore(rows.filter(r=>r.week===w)); grand += `<td class="num mono-cell">${s==null?"—":fmtN(s,1)}</td>`; });
+  grand += `<td class="num mono-cell">${fmtN(qScore(rows),1)}</td></tr></tbody>`;
+  $("#weeklyTbl").innerHTML = head + body + grand;
+}
+
+/* ======================= 4 · TEAM LEADER PERFORMANCE ==================== */
+function renderTLPerformance(rows){
+  const wk = weeksIn(rows);
+  const g = groupBy(rows, r=>r.tl);
+  const groups = Array.from(g.entries())
+    .map(([tl,rs])=>({tl, rs, score:qScore(rs), count:rs.length}))
+    .sort((a,b)=>b.score-a.score);
+  const host = $("#tlPerformance");
+  if(!groups.length){ host.innerHTML = `<div class="card"><div class="empty-state">${icoEmpty}<h3>No records</h3><p>No audits match the current filters.</p></div></div>`; return; }
+  host.innerHTML = groups.map((grp,gi)=>{
+    const assoc = Array.from(groupBy(grp.rs, r=>r.associate).entries())
+      .map(([a,rs])=>({a, count:rs.length, score:qScore(rs),
+        wk: wk.map(w=>qScore(rs.filter(r=>r.week===w)))}))
+      .sort((a,b)=>b.score-a.score);
+    const collapsed = gi>0 ? "collapsed" : "";
+    let rowsHtml = assoc.map(x=>`
+      <tr><td class="name">${esc(x.a)}</td>
+      <td class="num mono-cell">${fmtInt(x.count)}</td>
+      ${x.wk.map(s=>`<td class="num mono-cell" style="${tintBg(s)}">${s==null?"—":fmtN(s,1)}</td>`).join("")}
+      <td class="num">${pill(x.score)}</td></tr>`).join("");
+    // group grand total
+    let gt = `<tr class="grand"><td>Team Total</td><td class="num mono-cell">${fmtInt(grp.count)}</td>`;
+    wk.forEach(w=>{ const s=qScore(grp.rs.filter(r=>r.week===w)); gt += `<td class="num mono-cell">${s==null?"—":fmtN(s,1)}</td>`; });
+    gt += `<td class="num">${pill(grp.score)}</td></tr>`;
+    const initials = grp.tl.split(/[\s\/]+/).filter(Boolean).slice(0,2).map(s=>s[0]).join("").toUpperCase();
+    return `<div class="tl-group ${collapsed}">
+      <div class="tl-group-head" data-toggle>
+        <div class="tlg-left">
+          <div class="tlg-avatar">${esc(initials||"?")}</div>
+          <div><div class="tlg-name">${esc(grp.tl)}</div><div class="tlg-meta">${assoc.length} associates · ${fmtInt(grp.count)} audits</div></div>
+        </div>
+        <div class="tlg-right">
+          <div class="tlg-stat"><div class="v">${fmtN(grp.score,1)}</div><div class="l">Quality</div></div>
+          <div>${pill(grp.score)}</div>
+          <span class="tlg-chevron"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></span>
+        </div>
+      </div>
+      <div class="tl-group-body"><div class="tbl-scroll"><table class="tbl">
+        <thead><tr><th>Associate Name</th><th class="num">Audits</th>${wk.map(w=>`<th class="num">Week ${w}</th>`).join("")}<th class="num">Grand Total</th></tr></thead>
+        <tbody>${rowsHtml}${gt}</tbody>
+      </table></div></div>
+    </div>`;
+  }).join("");
+  host.querySelectorAll("[data-toggle]").forEach(h=>h.onclick=()=>h.closest(".tl-group").classList.toggle("collapsed"));
+}
+
+/* ======================= 5 · ASSOCIATE RANKING ========================= */
+function renderAssociateRanking(rows){
+  const g = groupBy(rows, r=>r.associate);
+  let data = Array.from(g.entries()).map(([a,rs])=>({
+    a, tl: modeOf(rs.map(r=>r.tl)), vertical: modeOf(rs.map(r=>r.vertical)),
+    count: rs.length, score: qScore(rs)
+  }));
+  // fixed score-rank
+  const byScore = [...data].sort((x,y)=>y.score-x.score);
+  const rankMap = new Map(); byScore.forEach((d,i)=>rankMap.set(d.a,i+1));
+  // sort by chosen column
+  const s = STATE.assocSort;
+  const cmp = { a:(x,y)=>x.a.localeCompare(y.a), tl:(x,y)=>x.tl.localeCompare(y.tl),
+    vertical:(x,y)=>x.vertical.localeCompare(y.vertical), count:(x,y)=>x.count-y.count,
+    score:(x,y)=>x.score-y.score, rank:(x,y)=>rankMap.get(x.a)-rankMap.get(y.a) }[s.key] || ((x,y)=>y.score-x.score);
+  data.sort((x,y)=> s.dir==="asc"?cmp(x,y):-cmp(x,y));
+
+  const cols = [
+    {k:"rank",l:"Rank",cls:"ctr"},{k:"a",l:"Associate",cls:""},{k:"tl",l:"Team Leader",cls:""},
+    {k:"vertical",l:"Vertical",cls:""},{k:"count",l:"Audit Count",cls:"num"},{k:"score",l:"Avg Quality Score",cls:"num"}
+  ];
+  let head = `<thead><tr>${cols.map(c=>sortableTh(c,s)).join("")}</tr></thead><tbody>`;
+  let body = data.length? data.map(d=>{
+    const rk = rankMap.get(d.a);
+    const rc = rk<=3?`r${rk}`:"";
+    return `<tr>
+      <td class="ctr"><span class="rank-badge ${rc}">${rk}</span></td>
+      <td class="name">${esc(d.a)}</td>
+      <td>${esc(d.tl)}</td>
+      <td>${esc(d.vertical)}</td>
+      <td class="num mono-cell">${fmtInt(d.count)}</td>
+      <td class="num">${pill(d.score)}</td></tr>`;
+  }).join("") : emptyRow(6);
+  const t = $("#associateTbl"); t.innerHTML = head + body + "</tbody>";
+  t.querySelectorAll("th.sortable").forEach(th=>th.onclick=()=>{
+    const k=th.dataset.k; if(STATE.assocSort.key===k) STATE.assocSort.dir = STATE.assocSort.dir==="asc"?"desc":"asc";
+    else STATE.assocSort = {key:k, dir: k==="a"||k==="tl"||k==="vertical"?"asc":"desc"};
+    renderAssociateRanking(filtered());
+  });
+}
+
+/* ======================= 6 · TEAM LEADER RANKING ======================= */
+function renderTLRanking(rows){
+  const g = groupBy(rows, r=>r.tl);
+  const data = Array.from(g.entries()).map(([tl,rs])=>{
+    const fatal = rs.filter(r=>r.isFatal).length;
+    return { tl, score:qScore(rs), audits:rs.length, fatal, fatalPct: rs.length?fatal/rs.length*100:0, errors:sum(rs.map(r=>r.errorCount)) };
+  }).sort((a,b)=>b.score-a.score);
+  let html = `<thead><tr><th>Team Leader</th><th class="num">Quality</th><th class="num">Audits</th><th class="num">Fatal</th><th class="num">Fatal %</th><th class="num">Errors</th></tr></thead><tbody>`;
+  if(!data.length) html += emptyRow(6);
+  data.forEach((d,i)=>{
+    html += `<tr class="row-click" data-tl="${esc(d.tl)}">
+      <td class="name"><span class="rank-badge ${i<3?"r"+(i+1):""}" style="margin-right:9px">${i+1}</span>${esc(d.tl)}</td>
+      <td class="num">${pill(d.score)}</td>
+      <td class="num mono-cell">${fmtInt(d.audits)}</td>
+      <td class="num mono-cell">${fmtInt(d.fatal)}</td>
+      <td class="num mono-cell" style="color:${d.fatalPct>10?COLP.poor:d.fatalPct>5?COLP.avg:COLP.muted}">${fmtPct(d.fatalPct,1)}</td>
+      <td class="num mono-cell">${fmtInt(d.errors)}</td></tr>`;
+  });
+  html += "</tbody>";
+  const t = $("#tlRankTbl"); t.innerHTML = html;
+  t.querySelectorAll(".row-click").forEach(r=>r.onclick=()=>setFilter("tl", r.dataset.tl));
+}
+
+/* ======================= 13 · AUDITOR ANALYSIS ========================= */
+function renderAuditorTable(rows){
+  const g = groupBy(rows, r=>r.auditor);
+  const data = Array.from(g.entries()).map(([au,rs])=>({
+    au, audits:rs.length, score:qScore(rs), fatal:rs.filter(r=>r.isFatal).length
+  })).sort((a,b)=>b.audits-a.audits);
+  let html = `<thead><tr><th>Auditor</th><th class="num">Audits</th><th class="num">Avg Quality</th><th class="num">Fatal Found</th></tr></thead><tbody>`;
+  if(!data.length) html += emptyRow(4);
+  data.forEach(d=>{
+    html += `<tr><td class="name">${esc(d.au)}</td>
+      <td class="num mono-cell">${fmtInt(d.audits)}</td>
+      <td class="num">${pill(d.score)}</td>
+      <td class="num mono-cell">${fmtInt(d.fatal)}</td></tr>`;
+  });
+  html += "</tbody>";
+  $("#auditorTbl").innerHTML = html;
+}
+
+/* ============== 7 · PARAMETER-WISE ERROR ANALYSIS ====================== */
+function paramErrorData(rows){
+  return PARAMS.map(p=>{
+    let err=0, scored=0, scoreSum=0;
+    rows.forEach(r=>{ const v=r.scores[p.key]; if(v!=null){ scored++; scoreSum+=v;
+      if(p.gradient){ if(v<GRADIENT_ERR_BELOW) err++; } else { if(v===0) err++; } } });
+    return { ...p, err, scored, avg: scored?scoreSum/scored:null, achievement: scored?(scoreSum/scored)/p.weight*100:null };
+  });
+}
+function renderParamErrors(rows){
+  const pd = paramErrorData(rows).sort((a,b)=>b.err-a.err);
+  const totalErr = sum(pd.map(p=>p.err));
+  $("#totalErrLabel").innerHTML = `Total errors: <b class="mono">${fmtInt(totalErr)}</b>`;
+  let html = `<thead><tr><th>Parameter</th><th class="num">Error Count</th><th class="num">Error %</th></tr></thead><tbody>`;
+  if(!pd.length||totalErr===0){ html += `<tr><td class="name">—</td><td class="num mono-cell">0</td><td class="num mono-cell">0%</td></tr>`; }
+  pd.forEach(p=>{
+    const pct = totalErr? p.err/totalErr*100 : 0;
+    const barW = totalErr? Math.max(2, p.err/pd[0].err*100) : 0;
+    html += `<tr>
+      <td class="name">${esc(p.label)}${p.fatal?'<span class="tag-fatal">FATAL</span>':""}</td>
+      <td class="num mono-cell">${fmtInt(p.err)}</td>
+      <td class="num">
+        <div style="display:inline-flex;align-items:center;gap:8px;justify-content:flex-end;width:100%">
+          <span style="flex:1;max-width:80px;height:6px;background:var(--line);border-radius:4px;overflow:hidden"><span style="display:block;height:100%;width:${barW}%;background:${p.err===0?'var(--line)':p.fatal?COLP.poor:COLP.primary};border-radius:4px"></span></span>
+          <span class="mono-cell" style="min-width:42px">${fmtN(pct,1)}%</span>
+        </div></td></tr>`;
+  });
+  html += "</tbody>";
+  $("#paramErrTbl").innerHTML = html;
+}
+
+/* ============== 9 · PARAMETER PERFORMANCE ============================== */
+function renderParamPerformance(rows){
+  const pd = paramErrorData(rows).sort((a,b)=>(a.achievement==null?999:a.achievement)-(b.achievement==null?999:b.achievement));
+  let html = `<thead><tr><th>Parameter</th><th class="num">Avg</th><th class="num">Max</th><th class="num">Achieve %</th><th class="num">Errors</th></tr></thead><tbody>`;
+  if(!pd.length) html += emptyRow(5);
+  pd.forEach(p=>{
+    const ac = p.achievement;
+    html += `<tr>
+      <td class="name">${esc(p.label)}${p.fatal?'<span class="tag-fatal">FATAL</span>':""}</td>
+      <td class="num mono-cell">${p.avg==null?"—":fmtN(p.avg,2)}</td>
+      <td class="num mono-cell">${p.weight}</td>
+      <td class="num">${ac==null?'<span class="pill na">—</span>':`<span class="pill ${band3(ac)}">${fmtN(ac,0)}%</span>`}</td>
+      <td class="num mono-cell">${fmtInt(p.err)}</td></tr>`;
+  });
+  html += "</tbody>";
+  $("#paramPerfTbl").innerHTML = html;
+}
+
+/* ============== 10 · FATAL KPIs ======================================== */
+function renderFatalKpis(rows){
+  const total = rows.length, fatal = rows.filter(r=>r.isFatal).length;
+  const pct = total?fatal/total*100:0;
+  const vg = groupBy(rows.filter(r=>r.isFatal), r=>r.vertical);
+  const worstVert = Array.from(vg.entries()).sort((a,b)=>b[1].length-a[1].length)[0];
+  const tg = groupBy(rows.filter(r=>r.isFatal), r=>r.tl);
+  const worstTL = Array.from(tg.entries()).sort((a,b)=>b[1].length-a[1].length)[0];
+  const kdef=[
+    {n:"Fatal Audit Count", v:fmtInt(fatal), ic:icoAlert, cls:"k-bad", foot:"calls flagged fatal"},
+    {n:"Fatal Audit %", v:fmtPct(pct,1), ic:icoPct, cls:pct>10?"k-bad":pct>5?"k-warn":"k-good", foot:"of "+fmtInt(total)+" audited calls"},
+    {n:"Top Fatal Vertical", v: worstVert?esc(worstVert[0]):"—", ic:icoLayer, cls:"k-warn", foot: worstVert?worstVert[1].length+" fatal audits":"none", small:true},
+    {n:"Top Fatal Leader", v: worstTL?esc(worstTL[0]):"—", ic:icoUser, cls:"k-warn", foot: worstTL?worstTL[1].length+" fatal audits":"none", small:true}
+  ];
+  $("#fatalKpis").innerHTML = kdef.map(k=>`
+    <div class="kpi in ${k.cls}">
+      <div class="kpi-top"><span class="kpi-name">${k.n}</span><span class="kpi-ic">${k.ic}</span></div>
+      <div class="kpi-val" style="${k.small?'font-size:19px;font-family:var(--display)':''}">${k.v}</div>
+      <div class="kpi-foot">${k.foot}</div></div>`).join("");
+}
+
+/* ======================================================================= */
+/* ==========================  CHARTS  =================================== */
+/* ======================================================================= */
+const COLP = { primary:"#0E6B7D", primaryLt:"#20A6BC", accent:"#E8971A", good:"#17916A", avg:"#C88A08", poor:"#C6413B", ink:"#0B2E36", muted:"#5E767E", grid:"#EDF1F2", faint:"#8DA1A8", band:["#C0392B","#E67E22","#E0A106","#7FB800","#17916A"] };
+function hexA(hex,a){ const n=parseInt(hex.slice(1),16); return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`; }
+function tint(hex){ // lighten for badge text on dark hero
+  const n=parseInt(hex.slice(1),16); let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+  r=Math.round(r+(255-r)*.45); g=Math.round(g+(255-g)*.45); b=Math.round(b+(255-b)*.45);
+  return `rgb(${r},${g},${b})`;
+}
+function haveECharts(){ return !!(window.echarts && window.echarts.graphic); }
+function getChart(id){
+  const el = document.getElementById(id); if(!el||!window.echarts) return {setOption:()=>{},clear:()=>{},resize:()=>{}};
+  if(!STATE.charts[id] || STATE.charts[id].isDisposed()){ STATE.charts[id]=echarts.init(el,null,{renderer:"canvas"}); }
+  return STATE.charts[id];
+}
+const AXIS = {
+  cat:(data,opts={})=>Object.assign({type:"category",data,axisLine:{lineStyle:{color:COLP.grid}},axisTick:{show:false},axisLabel:{color:COLP.muted,fontSize:11,fontFamily:"Inter"}},opts),
+  val:(opts={})=>Object.assign({type:"value",axisLine:{show:false},axisTick:{show:false},splitLine:{lineStyle:{color:COLP.grid}},axisLabel:{color:COLP.faint,fontSize:11,fontFamily:"IBM Plex Mono"}},opts)
+};
+const TT = (extra={})=>Object.assign({trigger:"axis",backgroundColor:"rgba(11,46,54,.94)",borderColor:"transparent",padding:[9,12],textStyle:{color:"#EAF6F8",fontSize:12,fontFamily:"Inter"},axisPointer:{lineStyle:{color:hexA(COLP.primary,.35)},shadowStyle:{color:hexA(COLP.primary,.06)}}},extra);
+
+const CHART_VIEWS = {
+  overview: renderStatusDonut,
+  trends: ()=>{ renderImproveChart(); renderDistChart(); },
+  quality: ()=>{ renderPareto(); renderParamPerfChart(); },
+  fatal: renderFatalCharts
+};
+function renderActiveCharts(){
+  const active = document.querySelector(".tab.active").dataset.view;
+  if(CHART_VIEWS[active]) CHART_VIEWS[active]();
+}
+
+/* --- 14 · Audit Status donut --- */
+function renderStatusDonut(){
+  if(!haveECharts()) return;
+  const rows = filtered();
+  const clean = rows.filter(r=>r.status==="clean").length;
+  const errs = rows.filter(r=>r.status==="errors").length;
+  const fatal = rows.filter(r=>r.status==="fatal").length;
+  const c = getChart("statusDonut");
+  if(!rows.length){ c.clear(); return; }
+  c.setOption({
+    tooltip:{trigger:"item",backgroundColor:"rgba(11,46,54,.94)",borderColor:"transparent",textStyle:{color:"#fff",fontFamily:"Inter"},
+      formatter:p=>`${p.name}<br/><b>${fmtInt(p.value)}</b> audits · ${fmtN(p.percent,1)}%`},
+    legend:{bottom:0,icon:"roundRect",itemWidth:11,itemHeight:11,textStyle:{color:COLP.muted,fontSize:12,fontFamily:"Inter"}},
+    series:[{type:"pie",radius:["58%","80%"],center:["50%","44%"],avoidLabelOverlap:true,
+      itemStyle:{borderColor:"#fff",borderWidth:3,borderRadius:6},
+      label:{show:true,position:"center",formatter:()=>`{a|${fmtInt(rows.length)}}\n{b|Total Audits}`,
+        rich:{a:{fontSize:30,fontFamily:"IBM Plex Mono",fontWeight:600,color:COLP.ink},b:{fontSize:11,color:COLP.muted,padding:[4,0,0,0]}}},
+      emphasis:{scaleSize:6,label:{show:true}},
+      data:[
+        {value:clean,name:"Passed (clean)",itemStyle:{color:COLP.good}},
+        {value:errs,name:"Passed with errors",itemStyle:{color:COLP.accent}},
+        {value:fatal,name:"Fatal",itemStyle:{color:COLP.poor}}
+      ]}]
+  },true);
+}
+
+/* --- 12 · Weekly improvement line --- */
+function renderImproveChart(){
+  if(!haveECharts()) return;
+  const rows = filtered();
+  const wk = weeksIn(rows);
+  const mode = $("#improveMode").value;
+  const c = getChart("improveChart");
+  if(!wk.length){ c.clear(); return; }
+  const xdata = wk.map(w=>"Week "+w);
+  const overall = wk.map(w=>{const s=qScore(rows.filter(r=>r.week===w));return s==null?null:+s.toFixed(1);});
+  let series=[];
+  const palette=[COLP.primary,COLP.accent,"#7B4FA3","#2E8B8B","#C6413B","#5B8C2A","#0A4E5C","#E0A106","#B5651D","#417B9C"];
+  if(mode==="overall"){
+    series=[{name:"Overall",type:"line",smooth:true,data:overall,symbol:"circle",symbolSize:8,lineStyle:{width:3.5,color:COLP.primary},itemStyle:{color:COLP.primary},
+      areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:hexA(COLP.primary,.22)},{offset:1,color:hexA(COLP.primary,0)}])},
+      label:{show:true,formatter:p=>p.value==null?"":p.value,color:COLP.primary,fontFamily:"IBM Plex Mono",fontSize:11,fontWeight:600}}];
+  } else {
+    const keyFn = mode==="tl"? (r=>r.tl):(r=>r.vertical);
+    const groups = Array.from(groupBy(rows,keyFn).entries()).map(([k,rs])=>({k,n:rs.length,rs}))
+      .sort((a,b)=>b.n-a.n).slice(0,10);
+    series = groups.map((g,i)=>({
+      name:g.k, type:"line", smooth:true, symbol:"circle", symbolSize:6,
+      data: wk.map(w=>{const s=qScore(g.rs.filter(r=>r.week===w));return s==null?null:+s.toFixed(1);}),
+      lineStyle:{width:2.4,color:palette[i%palette.length]}, itemStyle:{color:palette[i%palette.length]}, connectNulls:true
+    }));
+    series.push({name:"Overall",type:"line",smooth:true,data:overall,symbol:"none",
+      lineStyle:{width:3,type:"dashed",color:COLP.ink},itemStyle:{color:COLP.ink},z:10});
+  }
+  $("#improveSub").textContent = mode==="overall"?"Overall quality score by week":(mode==="tl"?"By team leader (top 10 by volume) vs overall":"By vertical vs overall");
+  c.setOption({
+    grid:{left:8,right:20,top:34,bottom:8,containLabel:true},
+    tooltip:TT({valueFormatter:v=>v==null?"—":v+"%"}),
+    legend:{type:"scroll",top:0,icon:"roundRect",itemWidth:11,itemHeight:11,textStyle:{color:COLP.muted,fontSize:11,fontFamily:"Inter"}},
+    xAxis:AXIS.cat(xdata,{boundaryGap:false}),
+    yAxis:AXIS.val({scale:true,axisLabel:{formatter:"{value}%",color:COLP.faint,fontSize:11,fontFamily:"IBM Plex Mono"}}),
+    series
+  },true);
+}
+
+/* --- 11 · Score distribution --- */
+function renderDistChart(){
+  if(!haveECharts()) return;
+  const rows = filtered();
+  const bands=[{l:"0–20",lo:0,hi:20},{l:"21–40",lo:20.0001,hi:40},{l:"41–60",lo:40.0001,hi:60},{l:"61–80",lo:60.0001,hi:80},{l:"81–100",lo:80.0001,hi:100}];
+  const counts = bands.map(b=> rows.filter(r=>r.finalScore>=b.lo-0.0001 && r.finalScore<=b.hi).length);
+  // fix boundary: assign each score once
+  const cc=[0,0,0,0,0];
+  rows.forEach(r=>{ const s=r.finalScore; let i = s<=20?0 : s<=40?1 : s<=60?2 : s<=80?3 : 4; cc[i]++; });
+  const c = getChart("distChart");
+  if(!rows.length){ c.clear(); $("#distStats").innerHTML=""; return; }
+  c.setOption({
+    grid:{left:6,right:16,top:22,bottom:6,containLabel:true},
+    tooltip:TT({formatter:p=>`Score ${p[0].name}<br/><b>${fmtInt(p[0].value)}</b> audits · ${fmtN(rows.length?p[0].value/rows.length*100:0,1)}%`}),
+    xAxis:AXIS.cat(bands.map(b=>b.l)),
+    yAxis:AXIS.val(),
+    series:[{type:"bar",data:cc.map((v,i)=>({value:v,itemStyle:{color:COLP.band[i],borderRadius:[6,6,0,0]}})),barWidth:"52%",
+      label:{show:true,position:"top",color:COLP.ink,fontFamily:"IBM Plex Mono",fontSize:11,fontWeight:600}}]
+  },true);
+  const total=rows.length;
+  $("#distStats").innerHTML = bands.map((b,i)=>`
+    <div class="insight" style="background:${hexA(COLP.band[i],.08)};border-color:${hexA(COLP.band[i],.25)};border-left-color:${COLP.band[i]};color:${COLP.ink}">
+      <span style="width:10px;height:10px;border-radius:3px;background:${COLP.band[i]};margin-top:4px;flex:0 0 auto"></span>
+      <div><b>${b.l}</b> · ${fmtInt(cc[i])} audits <span style="color:var(--muted)">(${fmtN(total?cc[i]/total*100:0,1)}%)</span></div>
+    </div>`).join("");
+}
+
+/* --- 8 · Pareto --- */
+function renderPareto(){
+  if(!haveECharts()) return;
+  const rows = filtered();
+  const pd = paramErrorData(rows).sort((a,b)=>b.err-a.err);
+  const totalErr = sum(pd.map(p=>p.err));
+  const c = getChart("paretoChart");
+  if(!totalErr){ c.clear(); $("#paretoInsight").innerHTML = `<div class="insight">${icoInfo}<div>No parameter errors in the current selection — nothing to concentrate on.</div></div>`; return; }
+  let cum=0; const cumPct=[]; const vital=[];
+  pd.forEach(p=>{ cum+=p.err; const cp=cum/totalErr*100; cumPct.push(+cp.toFixed(1)); });
+  // vital few = params until cumulative reaches 80%
+  let reached=false;
+  const vitalNames=[];
+  pd.forEach((p,i)=>{ const isVital = !reached; if(isVital && p.err>0) vitalNames.push(p.label); if(cumPct[i]>=80) reached=true; });
+  c.setOption({
+    grid:{left:8,right:52,top:30,bottom:96,containLabel:true},
+    tooltip:TT({formatter:ps=>{
+      const i=ps[0].dataIndex; let s=`<b>${pd[i].label}</b>${pd[i].fatal?' · FATAL':''}<br/>`;
+      s+=`Errors: <b>${fmtInt(pd[i].err)}</b> (${fmtN(totalErr?pd[i].err/totalErr*100:0,1)}%)<br/>Cumulative: <b>${cumPct[i]}%</b>`;
+      return s; }}),
+    legend:{top:0,right:0,icon:"roundRect",itemWidth:11,itemHeight:11,textStyle:{color:COLP.muted,fontSize:11,fontFamily:"Inter"},
+      data:["Error Count","Cumulative %"]},
+    xAxis:AXIS.cat(pd.map(p=>p.label),{axisLabel:{color:COLP.muted,fontSize:10,fontFamily:"Inter",interval:0,rotate:38,width:120,overflow:"truncate"}}),
+    yAxis:[
+      AXIS.val({name:"Errors",nameTextStyle:{color:COLP.faint,fontSize:10},max: Math.max(1,Math.ceil(pd[0].err*1.1))}),
+      AXIS.val({name:"Cum %",nameTextStyle:{color:COLP.faint,fontSize:10},max:100,position:"right",axisLabel:{formatter:"{value}%",color:COLP.faint,fontSize:10,fontFamily:"IBM Plex Mono"},splitLine:{show:false}})
+    ],
+    series:[
+      {name:"Error Count",type:"bar",yAxisIndex:0,barWidth:"56%",
+        data:pd.map((p,i)=>({value:p.err,itemStyle:{color: p.err===0?COLP.grid : (i<vitalNames.length? new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:COLP.primaryLt},{offset:1,color:COLP.primary}]) : hexA(COLP.primary,.32)),borderRadius:[5,5,0,0]}})),
+        label:{show:true,position:"top",color:COLP.ink,fontFamily:"IBM Plex Mono",fontSize:10,formatter:p=>p.value>0?p.value:""}},
+      {name:"Cumulative %",type:"line",yAxisIndex:1,smooth:false,symbol:"circle",symbolSize:7,
+        data:cumPct,lineStyle:{width:2.6,color:COLP.accent},itemStyle:{color:COLP.accent,borderColor:"#fff",borderWidth:1.5},z:5,
+        label:{show:true,formatter:p=>p.value+"%",color:COLP.accent,fontFamily:"IBM Plex Mono",fontSize:10,position:"top",distance:6},
+        markLine:{silent:true,symbol:"none",lineStyle:{color:COLP.poor,type:"dashed",width:1.4},
+          label:{formatter:"80%",color:COLP.poor,fontFamily:"IBM Plex Mono",fontSize:10,position:"insideEndTop"},
+          data:[{yAxis:80}]}}
+    ]
+  },true);
+  const nVital=vitalNames.length;
+  $("#paretoInsight").innerHTML = `<div class="insight">${icoInfo}
+    <div><b>${nVital} of ${pd.filter(p=>p.err>0).length} parameters</b> drive ~80% of all errors: <b>${vitalNames.map(esc).join(", ")}</b>. Prioritise coaching here for the fastest quality lift.</div></div>`;
+}
+
+/* --- 9 · Parameter achievement bar --- */
+function renderParamPerfChart(){
+  if(!haveECharts()) return;
+  const rows = filtered();
+  const pd = paramErrorData(rows).filter(p=>p.achievement!=null).sort((a,b)=>a.achievement-b.achievement);
+  const c = getChart("paramPerfChart");
+  if(!pd.length){ c.clear(); return; }
+  c.setOption({
+    grid:{left:8,right:44,top:10,bottom:8,containLabel:true},
+    tooltip:TT({formatter:p=>{const d=pd[p[0].dataIndex];return `<b>${d.label}</b>${d.fatal?' · FATAL':''}<br/>Achievement: <b>${fmtN(d.achievement,1)}%</b><br/>Avg ${fmtN(d.avg,2)} / ${d.weight} · ${fmtInt(d.err)} errors`;}}),
+    xAxis:AXIS.val({max:100,axisLabel:{formatter:"{value}%",color:COLP.faint,fontSize:10,fontFamily:"IBM Plex Mono"}}),
+    yAxis:AXIS.cat(pd.map(p=>p.label),{axisLabel:{color:COLP.muted,fontSize:10.5,fontFamily:"Inter",width:150,overflow:"truncate"}}),
+    series:[{type:"bar",barWidth:"62%",
+      data:pd.map(p=>({value:+p.achievement.toFixed(1),itemStyle:{color: band3(p.achievement)==="good"?COLP.good:band3(p.achievement)==="avg"?COLP.avg:COLP.poor,borderRadius:[0,5,5,0]}})),
+      label:{show:true,position:"right",formatter:p=>fmtN(p.value,0)+"%",color:COLP.muted,fontFamily:"IBM Plex Mono",fontSize:10}}]
+  },true);
+}
+
+/* --- 10 · Fatal charts --- */
+function renderFatalCharts(){
+  if(!haveECharts()) return;
+  const rows = filtered();
+  // by vertical
+  const vg = Array.from(groupBy(rows,r=>r.vertical).entries())
+    .map(([v,rs])=>({v,fatal:rs.filter(r=>r.isFatal).length,total:rs.length}))
+    .filter(x=>x.total>0).sort((a,b)=>b.fatal-a.fatal);
+  drawFatalBar("fatalVerticalChart", vg.map(x=>x.v), vg.map(x=>x.fatal), vg.map(x=>x.total));
+  // by TL
+  const tg = Array.from(groupBy(rows,r=>r.tl).entries())
+    .map(([t,rs])=>({t,fatal:rs.filter(r=>r.isFatal).length,total:rs.length}))
+    .filter(x=>x.total>0).sort((a,b)=>b.fatal-a.fatal);
+  drawFatalBar("fatalTLChart", tg.map(x=>x.t), tg.map(x=>x.fatal), tg.map(x=>x.total));
+  // trend by week
+  const wk = weeksIn(rows);
+  const wc = getChart("fatalTrendChart");
+  if(wk.length){
+    const cnt = wk.map(w=>rows.filter(r=>r.week===w && r.isFatal).length);
+    const rate = wk.map(w=>{const t=rows.filter(r=>r.week===w).length;return t?+(rows.filter(r=>r.week===w&&r.isFatal).length/t*100).toFixed(1):0;});
+    wc.setOption({
+      grid:{left:8,right:44,top:28,bottom:8,containLabel:true},
+      tooltip:TT(),
+      legend:{top:0,icon:"roundRect",itemWidth:11,itemHeight:11,textStyle:{color:COLP.muted,fontSize:11},data:["Fatal Count","Fatal %"]},
+      xAxis:AXIS.cat(wk.map(w=>"Week "+w),{boundaryGap:true}),
+      yAxis:[AXIS.val({name:"Count",nameTextStyle:{color:COLP.faint,fontSize:10}}),
+        AXIS.val({name:"Rate",max:100,position:"right",axisLabel:{formatter:"{value}%",color:COLP.faint,fontSize:10,fontFamily:"IBM Plex Mono"},splitLine:{show:false}})],
+      series:[
+        {name:"Fatal Count",type:"bar",yAxisIndex:0,barWidth:"40%",data:cnt,itemStyle:{color:hexA(COLP.poor,.3),borderRadius:[5,5,0,0]},label:{show:true,position:"top",color:COLP.muted,fontFamily:"IBM Plex Mono",fontSize:10}},
+        {name:"Fatal %",type:"line",yAxisIndex:1,smooth:true,symbol:"circle",symbolSize:7,data:rate,lineStyle:{width:3,color:COLP.poor},itemStyle:{color:COLP.poor},
+          label:{show:true,formatter:p=>p.value+"%",color:COLP.poor,fontFamily:"IBM Plex Mono",fontSize:10,position:"top"}}
+      ]
+    },true);
+  } else wc.clear();
+  // by week (count bars)
+  const wwc = getChart("fatalWeekChart");
+  if(wk.length){
+    const cnt = wk.map(w=>rows.filter(r=>r.week===w && r.isFatal).length);
+    wwc.setOption({
+      grid:{left:6,right:14,top:20,bottom:6,containLabel:true},
+      tooltip:TT(),
+      xAxis:AXIS.cat(wk.map(w=>"Week "+w)),
+      yAxis:AXIS.val(),
+      series:[{type:"bar",barWidth:"48%",data:cnt.map(v=>({value:v,itemStyle:{color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:"#E86A62"},{offset:1,color:COLP.poor}]),borderRadius:[6,6,0,0]}})),
+        label:{show:true,position:"top",color:COLP.ink,fontFamily:"IBM Plex Mono",fontSize:11,fontWeight:600}}]
+    },true);
+  } else wwc.clear();
+}
+function drawFatalBar(id, cats, counts, totals){
+  if(!haveECharts()) return;
+  const c = getChart(id);
+  if(!cats.length){ c.clear(); return; }
+  c.setOption({
+    grid:{left:8,right:40,top:10,bottom:8,containLabel:true},
+    tooltip:TT({formatter:p=>{const i=p[0].dataIndex;const rate=totals[i]?counts[i]/totals[i]*100:0;return `<b>${cats[i]}</b><br/>Fatal: <b>${fmtInt(counts[i])}</b> / ${fmtInt(totals[i])}<br/>Rate: <b>${fmtN(rate,1)}%</b>`;}}),
+    xAxis:AXIS.val(),
+    yAxis:AXIS.cat(cats,{axisLabel:{color:COLP.muted,fontSize:10.5,fontFamily:"Inter",width:130,overflow:"truncate"},inverse:true}),
+    series:[{type:"bar",barWidth:"58%",data:counts.map((v,i)=>({value:v,itemStyle:{color:new echarts.graphic.LinearGradient(1,0,0,0,[{offset:0,color:COLP.poor},{offset:1,color:"#E86A62"}]),borderRadius:[0,5,5,0]}})),
+      label:{show:true,position:"right",color:COLP.muted,fontFamily:"IBM Plex Mono",fontSize:10,
+        formatter:p=>{const i=p.dataIndex;const rate=totals[i]?counts[i]/totals[i]*100:0;return `${p.value}  ·  ${fmtN(rate,0)}%`;}}}]
+  },true);
+}
+
+/* ======================= 15 · DETAILED AUDIT TABLE ===================== */
+function detailRows(){
+  let rows = filtered();
+  const q = STATE.detail.search.trim().toLowerCase();
+  if(q){ rows = rows.filter(r=>[r.associate,r.tl,r.vertical,r.auditor,r.weekLabel].join(" ").toLowerCase().includes(q)); }
+  const s = STATE.detail.sort;
+  const val = (r)=>({ timestamp:r.timestamp, associate:r.associate, tl:r.tl, vertical:r.vertical, auditor:r.auditor, duration:r.durationSec||0, fatal:r.isFatal?1:0, score:r.finalScore }[s.key]);
+  rows = [...rows].sort((a,b)=>{ let x=val(a),y=val(b);
+    if(typeof x==="string"){ return s.dir==="asc"?x.localeCompare(y):y.localeCompare(x); }
+    return s.dir==="asc"?x-y:y-x; });
+  return rows;
+}
+function renderDetail(){
+  const all = detailRows();
+  const ps = STATE.detail.pageSize;
+  const pages = Math.max(1, Math.ceil(all.length/ps));
+  if(STATE.detail.page>pages) STATE.detail.page=pages;
+  const pg = STATE.detail.page;
+  const slice = all.slice((pg-1)*ps, pg*ps);
+  const cols=[
+    {k:"timestamp",l:"Timestamp"},{k:"associate",l:"Associate"},{k:"tl",l:"Team Leader"},
+    {k:"vertical",l:"Vertical"},{k:"auditor",l:"Auditor"},{k:"duration",l:"Duration",cls:"num"},
+    {k:"fatal",l:"Fatal",cls:"ctr"},{k:"score",l:"Final Score",cls:"num"}
+  ];
+  let head = `<thead><tr>${cols.map(c=>sortableTh(c,STATE.detail.sort)).join("")}</tr></thead><tbody>`;
+  let body = slice.length? slice.map(r=>`<tr>
+      <td class="mono-cell" style="color:var(--muted);font-size:12px">${esc(r.timestamp||"—")}</td>
+      <td class="name">${esc(r.associate)}</td>
+      <td>${esc(r.tl)}</td>
+      <td>${esc(r.vertical)}</td>
+      <td>${esc(r.auditor)}</td>
+      <td class="num mono-cell">${fmtDuration(r.durationSec)}</td>
+      <td class="ctr"><span class="fatal-badge ${r.isFatal?"yes":"no"}">${r.isFatal?"Yes":"No"}</span></td>
+      <td class="num">${pill(r.finalScore)}</td></tr>`).join("")
+    : `<tr><td colspan="8"><div class="empty-state">${icoEmpty}<h3>No matching audits</h3><p>Adjust the search or filters to see records.</p></div></td></tr>`;
+  const t = $("#detailTbl"); t.innerHTML = head + body + "</tbody>";
+  t.querySelectorAll("th.sortable").forEach(th=>th.onclick=()=>{
+    const k=th.dataset.k; const d=STATE.detail.sort;
+    if(d.key===k) d.dir = d.dir==="asc"?"desc":"asc";
+    else { d.key=k; d.dir = (k==="associate"||k==="tl"||k==="vertical"||k==="auditor"||k==="timestamp")?"asc":"desc"; }
+    STATE.detail.page=1; renderDetail();
+  });
+  // pagination
+  const from = all.length? (pg-1)*ps+1:0, to=Math.min(pg*ps, all.length);
+  $("#pagInfo").innerHTML = `Showing <b>${from}</b>–<b>${to}</b> of <b>${fmtInt(all.length)}</b> records`;
+  $("#pagBtns").innerHTML = pagButtons(pg, pages);
+  $$("#pagBtns [data-pg]").forEach(b=>b.onclick=()=>{ STATE.detail.page=parseInt(b.dataset.pg); renderDetail(); });
+}
+function pagButtons(cur, total){
+  const btn=(p,label,dis,act)=>`<button class="pag-btn ${act?"active":""}" data-pg="${p}" ${dis?"disabled":""}>${label}</button>`;
+  let h = btn(cur-1,'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',cur<=1);
+  const win=[]; const add=p=>{if(p>=1&&p<=total&&!win.includes(p))win.push(p);};
+  add(1);add(2);add(cur-1);add(cur);add(cur+1);add(total-1);add(total);
+  const sorted=uniq(win).sort((a,b)=>a-b);
+  let prev=0;
+  sorted.forEach(p=>{ if(p-prev>1) h+=`<span style="padding:0 4px;color:var(--faint)">…</span>`; h+=btn(p,p,false,p===cur); prev=p; });
+  h += btn(cur+1,'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>',cur>=total);
+  return h;
+}
+function exportCSV(){
+  const rows = detailRows();
+  const headers=["Timestamp","Associate Name","Team Leader","Vertical","Auditor","Call Duration","Fatal","Final Quality Score"];
+  const esc=v=>{ const s=String(v==null?"":v); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+  const lines=[headers.join(",")];
+  rows.forEach(r=>lines.push([r.timestamp,r.associate,r.tl,r.vertical,r.auditor,fmtDuration(r.durationSec),r.isFatal?"Yes":"No",fmtN(r.finalScore,1)].map(esc).join(",")));
+  const blob=new Blob(["\ufeff"+lines.join("\n")],{type:"text/csv;charset=utf-8"});
+  const url=URL.createObjectURL(blob); const a=document.createElement("a");
+  const d=new Date(); const stamp=`${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}`;
+  a.href=url; a.download=`quality-audit-records-${stamp}.csv`; a.click(); URL.revokeObjectURL(url);
+  toast("ok","Export ready", rows.length+" records downloaded as CSV.");
+}
+
+/* ============================ SHARED UI BITS =========================== */
+function sortableTh(c, sortState){
+  const active = sortState.key===c.k;
+  const dir = active ? (sortState.dir==="asc"?"▲":"▼") : "";
+  return `<th class="${c.cls||""} sortable ${active?"sorted":""}" data-k="${c.k}"><span class="th-in">${esc(c.l)}<span class="sort-ind">${active?dir:"↕"}</span></span></th>`;
+}
+function emptyRow(cols){ return `<tr><td colspan="${cols}"><div class="empty-state" style="padding:34px">${icoEmpty}<h3>No records</h3><p>No audits match the current filters.</p></div></td></tr>`; }
+function tintBg(score){ const b=band3(score); if(b==="good")return "background:rgba(23,145,106,.10)"; if(b==="avg")return "background:rgba(200,138,8,.11)"; if(b==="poor")return "background:rgba(198,65,59,.09)"; return ""; }
+function arrowSvg(up){ return up
+  ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>'
+  : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>'; }
+function setFilter(field, value){
+  STATE.filters[field]=value;
+  const map={month:"#fMonth",vertical:"#fVertical",tl:"#fTL"};
+  if($(map[field])) $(map[field]).value=value;
+  renderAll();
+}
+function toast(kind, title, msg){
+  const w=$("#toastWrap"); const t=document.createElement("div"); t.className="toast "+(kind==="ok"?"ok":"err");
+  t.innerHTML=`<span class="t-ic">${kind==="ok"?'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>':'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="12" y1="8" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>'}</span><div><b>${esc(title)}</b><div style="font-size:12px;color:#BFDCE2">${esc(msg||"")}</div></div>`;
+  w.appendChild(t); setTimeout(()=>{ t.classList.add("out"); setTimeout(()=>t.remove(),300); }, 4200);
+}
+
+/* ================================ ICONS =============================== */
+const icoStar='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
+const icoCheck='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>';
+const icoUser='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+const icoUsers='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>';
+const icoBolt='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>';
+const icoAlert='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+const icoPct='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>';
+const icoClock='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
+const icoLayer='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>';
+const icoInfo='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
+const icoEmpty='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>';
+
+/* ============================ EVENT WIRING ============================= */
+function initEvents(){
+  ["#fMonth","#fVertical","#fTL"].forEach(sel=>$(sel).addEventListener("change",e=>{
+    const field={"#fMonth":"month","#fVertical":"vertical","#fTL":"tl"}[sel];
+    STATE.filters[field]=e.target.value; renderAll();
+  }));
+  $("#resetBtn").onclick=()=>{ STATE.filters={month:"__all",vertical:"__all",tl:"__all"};
+    $("#fMonth").value="__all"; $("#fVertical").value="__all"; $("#fTL").value="__all"; renderAll(); };
+  $("#refreshBtn").onclick=()=>loadData(true);
+  // tabs
+  $$("#tabs .tab").forEach(tab=>tab.onclick=()=>{
+    $$("#tabs .tab").forEach(t=>t.classList.remove("active"));
+    $$(".view").forEach(v=>v.classList.remove("active"));
+    tab.classList.add("active");
+    $("#view-"+tab.dataset.view).classList.add("active");
+    renderActiveCharts();
+    setTimeout(()=>Object.values(STATE.charts).forEach(c=>{try{c.resize();}catch(e){}}), 30);
+  });
+  $("#improveMode").onchange=renderImproveChart;
+  // detail
+  let st;
+  $("#detailSearch").addEventListener("input",e=>{ clearTimeout(st); st=setTimeout(()=>{ STATE.detail.search=e.target.value; STATE.detail.page=1; renderDetail(); },180); });
+  $("#pageSize").onchange=e=>{ STATE.detail.pageSize=parseInt(e.target.value); STATE.detail.page=1; renderDetail(); };
+  $("#exportBtn").onclick=exportCSV;
+  // resize
+  window.addEventListener("resize",()=>{ clearTimeout(window.__rz); window.__rz=setTimeout(()=>Object.values(STATE.charts).forEach(c=>{try{c.resize();}catch(e){}}),120); });
+  // reflect thresholds in legend
+  $("#thHigh").textContent=THRESHOLDS.HIGH; $("#thLow").textContent=THRESHOLDS.LOW;
+}
+
+/* ========================= SAMPLE FALLBACK DATA =========================
+   Deterministic synthetic snapshot used only when the live Google Sheet
+   cannot be reached (e.g. offline preview). Replaced instantly on refresh. */
+function buildSample(){
+  const verticals=["Abandoned High Cart","Abandoned Low Cart","Shop on Call","Shop on WA","Very Low Cart Team","Video Call"];
+  const leaders={"Ankur Singh":["Akanksha Sharma","Arti Hande","Aditya Tiwari","Shahrukh Khan","Vishal Singh","Pareekshith Shetty","Namit Gupta","Akanksha Thakre"],
+    "Ayush Goyal":["Akshat Sharma","Subhalaxmi Satpathy"],
+    "Pooja Singh / Dhanendra Kumar":["Parth","Isha Gite","Vaishnavi C","Bushra Sheikh","Fauziya Parveen","Apurva Bagde","Abdul Sohail"]};
+  const auditors=["Ritika Sharma","Mohit Verma","Sneha Kulkarni","Rahul Nair"];
+  let seed=987654321; const rnd=()=>{ seed=(seed*1103515245+12345)&0x7fffffff; return seed/0x7fffffff; };
+  const pick=a=>a[Math.floor(rnd()*a.length)];
+  const rows=[]; const H=(o)=>o;
+  const paramCols=["Call Opening","Probing / Checking Preferences","Product & Process Knowledge","Suggesting / Shortlisting Correct Product","Objection Handling","Urgency Creation","Follow-Up","WhatsApp Communication","English Proficiency","Speech Clarity","Confidence / Conviction","Rapport Building / User Engagement","Referral / Offer","Call Closing"];
+  const weights=[4,12,12,12,8,8,8,8,4,4,4,4,8,4];
+  const gradientIdx=[8,9,10,11];
+  Object.entries(leaders).forEach(([tl,assocs])=>{
+    assocs.forEach(a=>{
+      const vert=pick(verticals);
+      const nAudits=3+Math.floor(rnd()*4);
+      for(let w=1;w<=4;w++){
+        for(let k=0;k<nAudits;k++){
+          if(rnd()<0.25) continue; // sparse weeks
+          const fatal = rnd()<0.08;
+          const row={ "Timestamp":`0${1+Math.floor(rnd()*9)}/06/2026 1${Math.floor(rnd()*9)}:${10+Math.floor(rnd()*49)}`,
+            "Email Address":a.toLowerCase().replace(/[^a-z]/g,".")+"@frido.in","Auditor":pick(auditors),
+            "Vertical":vert,"Associate Name":a,"Team Leader":tl,
+            "Call Duration":`${3+Math.floor(rnd()*9)}:${10+Math.floor(rnd()*49)}`,
+            "Month":"June","Year":"2026","Week":"Week "+w };
+          let total=0;
+          paramCols.forEach((c,i)=>{
+            let v;
+            if(gradientIdx.includes(i)){ v = rnd()<0.72?4:(rnd()<0.5?3:(rnd()<0.6?2:1)); }
+            else { v = rnd()<0.8? weights[i] : 0; }
+            row[c]=v; total+=v;
+          });
+          row["Fatal"]=fatal?"Yes":"No";
+          row["Final Quality Score"]= fatal?0:total;
+          rows.push(row);
+        }
+      }
+    });
+  });
+  return rows;
+}
+const SAMPLE_ROWS = buildSample();
+
+/* =============================== BOOT ================================== */
+initEvents();
+loadData(false);
+</script>
+</body>
+</html>
